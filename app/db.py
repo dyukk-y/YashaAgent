@@ -80,6 +80,7 @@ class ArchiveDB:
                     file_id TEXT NOT NULL,
                     file_unique_id TEXT NOT NULL,
                     media_type TEXT NOT NULL,
+                    media_group_id TEXT NOT NULL DEFAULT '',
                     file_name TEXT NOT NULL DEFAULT '',
                     mime_type TEXT NOT NULL DEFAULT '',
                     file_size INTEGER,
@@ -109,6 +110,9 @@ class ArchiveDB:
             notification_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(notification_settings)")).fetchall()}
             if "interval_seconds" not in notification_columns:
                 await db.execute("ALTER TABLE notification_settings ADD COLUMN interval_seconds INTEGER NOT NULL DEFAULT 60")
+            media_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(archived_media)")).fetchall()}
+            if "media_group_id" not in media_columns:
+                await db.execute("ALTER TABLE archived_media ADD COLUMN media_group_id TEXT NOT NULL DEFAULT ''")
             await db.commit()
 
     async def owner_connections(self, owner_id: int) -> list[dict[str, Any]]:
@@ -325,16 +329,16 @@ class ArchiveDB:
             await db.execute(
                 """INSERT INTO archived_media
                    (connection_id, owner_user_id, chat_id, message_id, file_id, file_unique_id,
-                    media_type, file_name, mime_type, file_size, status, created_at)
-                   VALUES(?,?,?,?,?,?,?,?,?,?, 'pending', ?)
+                    media_type, media_group_id, file_name, mime_type, file_size, status, created_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)
                    ON CONFLICT(connection_id, chat_id, message_id, file_unique_id) DO UPDATE SET
                     file_id=excluded.file_id, media_type=excluded.media_type,
-                    file_name=excluded.file_name, mime_type=excluded.mime_type,
-                    file_size=excluded.file_size""",
+                    media_group_id=excluded.media_group_id, file_name=excluded.file_name,
+                    mime_type=excluded.mime_type, file_size=excluded.file_size""",
                 (connection["connection_id"], connection["owner_user_id"], message.chat.id,
                  message.message_id, media["file_id"], media["file_unique_id"], media["media_type"],
-                 media.get("file_name", ""), media.get("mime_type", ""), media.get("file_size"),
-                 int(message.date.timestamp())),
+                 getattr(message, "media_group_id", None) or "", media.get("file_name", ""),
+                 media.get("mime_type", ""), media.get("file_size"), int(message.date.timestamp())),
             )
             row = await (await db.execute(
                 "SELECT id FROM archived_media WHERE connection_id=? AND chat_id=? AND message_id=? AND file_unique_id=?",
@@ -375,7 +379,7 @@ class ArchiveDB:
             return []
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
-            sql = """SELECT m.id,m.owner_user_id,m.chat_id,m.message_id,m.media_type,m.file_name,m.mime_type,
+            sql = """SELECT m.id,m.owner_user_id,m.chat_id,m.message_id,m.media_type,m.media_group_id,m.file_name,m.mime_type,
                             m.file_size,m.status,m.error,m.created_at,a.chat_title,a.sender_name,a.text,
                             a.date_ts
                      FROM archived_media m
