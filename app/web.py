@@ -158,6 +158,15 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
     @api.post("/api/archive/clear")
     async def clear_archive(request: Request):
         user = await owner_for(request)
+        root = request.app.state.media_root
+        for raw_path in await db.owner_media_paths(user["id"]):
+            path = Path(raw_path).resolve()
+            try:
+                path.relative_to(root)
+                path.unlink(missing_ok=True)
+            except (ValueError, OSError):
+                # Never follow paths outside the configured media directory.
+                continue
         deleted = await db.forget_owner(user["id"])
         return {"ok": True, "deleted": deleted}
 
