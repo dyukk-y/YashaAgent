@@ -109,8 +109,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     async def archive_media(message: Message, connection: dict, owner_id: int) -> None:
         media = extract_media(message)
         if not media:
-        root = Path(settings.media_path).resolve()
             return
+        root = Path(settings.media_path).resolve()
         media_id = await db.save_media_record(connection, message, media)
         existing = await db.media_file(owner_id, message.chat.id, message.message_id, media_id)
         if existing and existing.get("status") == "stored" and existing.get("stored_path"):
