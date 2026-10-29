@@ -3,4 +3,8 @@ services:
     build: .
     env_file:
       - .env
+    environment:
+      DATABASE_PATH: /data/yashaagent.sqlite3
+    volumes:
+      - ./data:/data
     restart: unless-stopped
