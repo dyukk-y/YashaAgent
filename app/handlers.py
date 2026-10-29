@@ -2,6 +2,7 @@ import asyncio
 import logging
 import json
 import re
+from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 from pathlib import Path
 from collections import defaultdict
 
@@ -17,7 +18,7 @@ from app.db import ArchiveDB
 
 log = logging.getLogger(__name__)
 
-BTN_APP = "📂 Открыть YashaAgent"
+BTN_APP = "Открыть"
 
 
 def connection_allows_archiving(connection: dict) -> bool:
@@ -31,36 +32,19 @@ def connection_allows_archiving(connection: dict) -> bool:
 
 def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     router = Router()
-    event_markup = (
-        InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=BTN_APP, web_app=WebAppInfo(url=settings.webapp_url))
+    def app_markup(label: str = BTN_APP, **params) -> InlineKeyboardMarkup | None:
+        if not settings.webapp_url.startswith("https://"):
+            return None
+        parts = urlsplit(settings.webapp_url)
+        query = dict(parse_qsl(parts.query, keep_blank_values=True))
+        query.update({key: str(value) for key, value in params.items() if value is not None})
+        url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+        return InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text=label, web_app=WebAppInfo(url=url))
         ]])
-        if settings.webapp_url.startswith("https://")
-        else None
-    )
-    admin_lookup_waiting: set[int] = set()
-    pending: dict[int, list[str]] = defaultdict(list)
-    digest_tasks: dict[int, asyncio.Task] = {}
 
-    async def send_digest(bot, owner_id: int) -> None:
-        try:
-            await asyncio.sleep(await db.notification_interval(owner_id))
-            items = pending.pop(owner_id, [])
-            if not items or not await db.notifications_enabled(owner_id):
-                return
-            interval = await db.notification_interval(owner_id)
-            header = f"🔔 Новых сообщений: {len(items)} за последние {interval} сек."
-            body = "\n".join(f"• {item}" for item in items[:12])
-            if len(items) > 12:
-                body += f"\n…и ещё {len(items) - 12}"
-            await bot.send_message(owner_id, f"{header}\n\n{body}"[:3900], reply_markup=event_markup)
-        except Exception:
-            log.exception("Could not send grouped message digest to owner=%s", owner_id)
-        finally:
-            digest_tasks.pop(owner_id, None)
-            # If new messages arrived while the digest was being sent, schedule another batch.
-            if pending.get(owner_id):
-                digest_tasks[owner_id] = asyncio.create_task(send_digest(bot, owner_id))
+    event_markup = app_markup()
+    admin_lookup_waiting: set[int] = set()
 
     async def queue_notification(message: Message, owner_id: int) -> None:
         if not await db.notifications_enabled(owner_id):
@@ -69,13 +53,26 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if sender and sender.id == owner_id:
             return
         name = " ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else "Контакт"
-        text = message.text or message.caption or "📎 Сообщение без текста"
+        kind = next((label for attr, label in [
+            ("video_note", "видеокружок"), ("voice", "голосовое сообщение"),
+            ("video", "видео"), ("photo", "фото"), ("animation", "GIF"),
+            ("sticker", "стикер"), ("audio", "аудио"), ("document", "файл"),
+        ] if getattr(message, attr, None)), "")
+        text = message.text or message.caption or (f"Отправлено: {kind}" if kind else "Сообщение без текста")
         text = " ".join(text.split())
-        if len(text) > 180:
-            text = text[:177] + "…"
-        pending[owner_id].append(f"{name}: {text}")
-        if owner_id not in digest_tasks:
-            digest_tasks[owner_id] = asyncio.create_task(send_digest(message.bot, owner_id))
+        if kind and (message.text or message.caption):
+            text = f"{kind.capitalize()}: {text}"
+        if len(text) > 700:
+            text = text[:697] + "…"
+        chat_name = getattr(message.chat, "title", None) or getattr(message.chat, "first_name", None) or "Диалог"
+        try:
+            await message.bot.send_message(
+                owner_id,
+                f"💬 Новое сообщение\n{chat_name} · {name}\n\n{text}",
+                reply_markup=app_markup("Открыть", chat_id=message.chat.id, message_id=message.message_id),
+            )
+        except Exception:
+            log.exception("Could not send message notification to owner=%s", owner_id)
 
     @router.message(CommandStart())
     async def start_handler(message: Message) -> None:
