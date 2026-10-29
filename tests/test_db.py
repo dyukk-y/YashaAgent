@@ -1,4 +1,5 @@
 import asyncio
+import sqlite3
 from datetime import datetime, timezone
 
 from app.db import ArchiveDB
@@ -32,6 +33,7 @@ def test_archive_search_and_forget(tmp_path):
         assert connection is not None
         await db.save_message(connection, FakeMessage())
         assert (await db.search(42, "hello"))[0]["text"] == "hello archive"
+        assert (await db.search(None, "hello"))[0]["owner_user_id"] == 42
         assert await db.search(99, "hello") == []
         assert await db.stats(42) == (1, 0)
         assert await db.forget_owner(42) == 1
@@ -129,4 +131,44 @@ def test_media_gallery_usage_and_retention(tmp_path):
         await db.mark_media_expired(media_id)
         assert (await db.list_media(42, "all"))[0]["status"] == "expired"
         assert await db.media_usage_for_owner(42) == 0
+    asyncio.run(run())
+
+
+def test_existing_media_table_migrates_album_metadata(tmp_path):
+    async def run():
+        path = tmp_path / "existing.sqlite3"
+        with sqlite3.connect(path) as conn:
+            conn.execute(
+                """CREATE TABLE archived_media (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    connection_id TEXT NOT NULL,
+                    owner_user_id INTEGER NOT NULL,
+                    chat_id INTEGER NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    file_id TEXT NOT NULL,
+                    file_unique_id TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    file_name TEXT NOT NULL DEFAULT '',
+                    mime_type TEXT NOT NULL DEFAULT '',
+                    file_size INTEGER,
+                    stored_path TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    error TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL,
+                    UNIQUE(connection_id, chat_id, message_id, file_unique_id)
+                )"""
+            )
+            conn.execute(
+                """INSERT INTO archived_media
+                   (connection_id,owner_user_id,chat_id,message_id,file_id,file_unique_id,media_type,created_at)
+                   VALUES('bc-old',42,900,1,'f1','u1','photo',100)"""
+            )
+        db = ArchiveDB(str(path))
+        await db.initialize()
+        import aiosqlite
+        async with aiosqlite.connect(path) as conn:
+            columns = {row[1] for row in await (await conn.execute("PRAGMA table_info(archived_media)")).fetchall()}
+            row = await (await conn.execute("SELECT media_group_id FROM archived_media WHERE file_unique_id='u1'")).fetchone()
+        assert "media_group_id" in columns
+        assert row[0] == ""
     asyncio.run(run())
