@@ -44,13 +44,17 @@ class ArchiveDB:
                 CREATE INDEX IF NOT EXISTS idx_archive_owner_chat ON archived_messages(owner_user_id, chat_id);
                 CREATE TABLE IF NOT EXISTS notification_settings (
                     owner_user_id INTEGER PRIMARY KEY,
-                    enabled INTEGER NOT NULL DEFAULT 1
+                    enabled INTEGER NOT NULL DEFAULT 1,
+                    interval_seconds INTEGER NOT NULL DEFAULT 60
                 );
             """)
             # Safe migration for databases created by earlier versions.
             columns = {row[1] for row in await (await db.execute("PRAGMA table_info(owner_settings)")).fetchall()}
             if "notifications_enabled" not in columns:
                 await db.execute("ALTER TABLE owner_settings ADD COLUMN notifications_enabled INTEGER NOT NULL DEFAULT 1")
+            notification_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(notification_settings)")).fetchall()}
+            if "interval_seconds" not in notification_columns:
+                await db.execute("ALTER TABLE notification_settings ADD COLUMN interval_seconds INTEGER NOT NULL DEFAULT 60")
             await db.commit()
 
     async def save_connection(self, connection_id: str, owner_id: int, enabled: bool, can_read: bool, updated_at: int) -> None:
@@ -89,6 +93,19 @@ class ArchiveDB:
     async def set_notifications_enabled(self, owner_id: int, enabled: bool) -> None:
         async with aiosqlite.connect(self.path) as db:
             await db.execute("INSERT INTO notification_settings(owner_user_id, enabled) VALUES(?,?) ON CONFLICT(owner_user_id) DO UPDATE SET enabled=excluded.enabled", (owner_id, int(enabled)))
+            await db.commit()
+
+    async def notification_interval(self, owner_id: int) -> int:
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute("SELECT interval_seconds FROM notification_settings WHERE owner_user_id=?", (owner_id,))
+            row = await cur.fetchone()
+            return int(row[0]) if row else 60
+
+    async def set_notification_interval(self, owner_id: int, seconds: int) -> None:
+        if seconds not in {30, 60, 300, 900}:
+            raise ValueError("Unsupported notification interval")
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("INSERT INTO notification_settings(owner_user_id, enabled, interval_seconds) VALUES(?,1,?) ON CONFLICT(owner_user_id) DO UPDATE SET interval_seconds=excluded.interval_seconds", (owner_id, seconds))
             await db.commit()
 
     async def save_message(self, connection: dict[str, Any], message: Any) -> None:
