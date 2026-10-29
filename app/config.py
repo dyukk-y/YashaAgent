@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     ai_api_key: str = ""
     ai_model: str = "gpt-4.1-mini"
+    webapp_url: str = ""
+    webapp_port: int = 8080
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
