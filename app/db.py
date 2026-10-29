@@ -80,6 +80,7 @@ class ArchiveDB:
                     file_id TEXT NOT NULL,
                     file_unique_id TEXT NOT NULL,
                     media_type TEXT NOT NULL,
+                    media_group_id TEXT NOT NULL DEFAULT '',
                     file_name TEXT NOT NULL DEFAULT '',
                     mime_type TEXT NOT NULL DEFAULT '',
                     file_size INTEGER,
@@ -109,6 +110,9 @@ class ArchiveDB:
             notification_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(notification_settings)")).fetchall()}
             if "interval_seconds" not in notification_columns:
                 await db.execute("ALTER TABLE notification_settings ADD COLUMN interval_seconds INTEGER NOT NULL DEFAULT 60")
+            media_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(archived_media)")).fetchall()}
+            if "media_group_id" not in media_columns:
+                await db.execute("ALTER TABLE archived_media ADD COLUMN media_group_id TEXT NOT NULL DEFAULT ''")
             await db.commit()
 
     async def owner_connections(self, owner_id: int) -> list[dict[str, Any]]:
@@ -375,7 +379,7 @@ class ArchiveDB:
             return []
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
-            sql = """SELECT m.id,m.owner_user_id,m.chat_id,m.message_id,m.media_type,m.file_name,m.mime_type,
+            sql = """SELECT m.id,m.owner_user_id,m.chat_id,m.message_id,m.media_type,m.media_group_id,m.file_name,m.mime_type,
                             m.file_size,m.status,m.error,m.created_at,a.chat_title,a.sender_name,a.text,
                             a.date_ts
                      FROM archived_media m
