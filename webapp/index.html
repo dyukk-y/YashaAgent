@@ -97,6 +97,40 @@ body{background:radial-gradient(ellipse at 10% 0%,rgba(94,111,255,.17),transpare
 .media-lightbox[hidden]{display:none}.media-lightbox{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:18px;background:rgba(3,6,16,.92);backdrop-filter:blur(16px)}.media-lightbox-panel{position:relative;width:min(100%,900px);max-height:92dvh;overflow:auto;border:1px solid #394365;border-radius:20px;background:#10162a;padding:16px;box-shadow:0 30px 100px rgba(0,0,0,.5)}.media-lightbox-close{position:sticky;top:0;float:right;z-index:2;border:1px solid #394365;background:#1a2340;color:#eef0ff;border-radius:99px;width:36px;height:36px;font-size:22px}.media-lightbox-content{clear:both;display:grid;place-items:center;min-height:80px}.media-lightbox-content img{max-width:100%;max-height:78dvh;object-fit:contain;border-radius:12px}.media-lightbox-content video{max-width:100%;max-height:78dvh;border-radius:12px}.media-lightbox-content audio{width:min(100%,560px);margin:28px 0}
  .status.good{color:#8ce8c8;border-color:rgba(124,230,193,.4);background:rgba(124,230,193,.07)}.status.warn{color:#ffd28a;border-color:rgba(255,210,138,.4);background:rgba(255,210,138,.07)}.status.off{color:#ff9caf;border-color:rgba(255,113,139,.4);background:rgba(255,113,139,.07)}
 .media-album-label{grid-column:1/-1;display:flex;align-items:center;gap:9px;border:1px solid rgba(142,157,255,.22);border-radius:12px;background:linear-gradient(100deg,rgba(142,157,255,.12),rgba(142,157,255,.035));padding:10px 12px;color:#d3d9ff;font:650 11px Onest,sans-serif}.media-album-label span{color:#8997c1;font:10px 'JetBrains Mono',monospace;margin-left:auto}
+
+/* YashaAgent visual identity: high-contrast monochrome, bold borders, restrained shapes. */
+:root{color-scheme:dark;--bg:#050505;--fg:#f7f7f7;--mute:#a5a5a5;--line:#3a3a3a;--card:#111;--ibg:#fff;--ifg:#050505;--danger:#ff6875;--violet:#d4d4d4;--blue:#fff;--accent:#fff;--mint:#fff}
+html,body{background:#050505!important;color:#f7f7f7!important;font-family:Onest,sans-serif}
+body{background:#050505!important}
+.top{background:rgba(5,5,5,.96)!important;border-bottom:2px solid #f7f7f7!important;box-shadow:none!important}
+.brand .logo,.avatar{background:#f7f7f7!important;color:#050505!important;box-shadow:none!important;border-radius:4px!important}
+.brand .logo{font-family:Unbounded,sans-serif!important}
+.search{background:#0b0b0b!important;border:1.5px solid #f7f7f7!important;border-radius:4px!important;box-shadow:none!important}
+.search input{background:transparent!important;color:#fff!important}
+.tab,.media-filters button{background:#0a0a0a!important;color:#eee!important;border:1.5px solid #555!important;border-radius:4px!important;box-shadow:none!important}
+.tab.active,.media-filters button.active{background:#fff!important;color:#000!important;border-color:#fff!important;box-shadow:none!important}
+.chat-row,.conversation,.event-card,.media-card,.media-stat,.revision,.event-diff{background:#0a0a0a!important;border:1.5px solid #3c3c3c!important;border-radius:4px!important;box-shadow:none!important}
+.chat-row:hover{background:#111!important;border-color:#fff!important;transform:none!important}
+.chat-item:hover,.chat-item.selected{background:#171717!important}
+.status,.pill,.event-label,.event-type,.media-status,.media-album-label{border-radius:3px!important;box-shadow:none!important}
+.status.good{color:#fff!important;border-color:#fff!important;background:#151515!important}
+.bubble{background:#101010!important;border:1.5px solid #484848!important;border-radius:4px!important;box-shadow:none!important;color:#fff!important}
+.bubble.mine{background:#f7f7f7!important;color:#050505!important;border-color:#f7f7f7!important;border-radius:4px!important}
+.bubble.deleted{border-color:#ff6875!important;background:#1a090b!important}
+.bubble.edited{border-color:#aaa!important;background:#141414!important}
+.composer textarea,.send,.back,.hide-chat,.history-btn,.media-card-actions button,.media-more{border-radius:4px!important;box-shadow:none!important}
+.composer textarea{background:#0b0b0b!important;color:#fff!important;border:1.5px solid #555!important}
+.send{background:#fff!important;color:#000!important}
+.media-stat strong{color:#fff!important}
+.media-cover{background:#101010!important;border:1px solid #444!important;border-radius:3px!important;color:#fff!important}
+.media-album-label{background:#111!important;color:#fff!important}
+.event-card{color:#fff!important}
+.event-type.deleted{color:#ff8791!important;background:#19090b!important}
+.event-type.edited{color:#fff!important;background:#171717!important}
+.previous-snippet,.revision{background:#111!important;color:#eee!important}
+.media-card-actions button{background:#111!important;color:#fff!important;border:1px solid #555!important}
+.media-card-actions button:hover,.history-btn:hover{background:#222!important}
+@media(prefers-color-scheme:light){:root{color-scheme:dark}}
 </style>
 </head>
 <body>
@@ -181,7 +215,7 @@ $('tabs').querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click
 $('search').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(async()=>{const q=$('search').value.trim();if(filter==='media'){if(!q){loadMedia(mediaKind,true);return}renderMedia(mediaItems.filter(m=>[m.file_name,m.chat_title,m.text,m.media_type].some(v=>String(v||'').toLowerCase().includes(q.toLowerCase()))));return}if(!q){if(filter==='deleted'||filter==='edited'){loadEvents(filter);return}renderChats(adminMode?adminChats:chats);return}try{const d=await api((adminMode?'/api/admin/search':'/api/search')+'?q='+encodeURIComponent(q));const msgs=d.messages||[];$('chatList').innerHTML=msgs.length?msgs.map(m=>'<button class="chat-item" data-chat="'+m.chat_id+'" data-owner="'+Number(m.owner_user_id||0)+'"><div class="avatar">⌕</div><div class="chat-meta"><div class="chat-title">'+esc(m.sender_name||'Сообщение')+'</div><div class="preview">'+esc(m.text||'')+'</div>'+(m.is_deleted?'<span class="pill">Удалено</span>':'')+'</div><div class="right-meta">'+esc(dateLabel(m.date_ts))+'</div></button>').join():'<div class="empty">Ничего не найдено</div>';document.querySelectorAll('[data-chat]').forEach(b=>b.addEventListener('click',()=>adminMode?openAdminChat(Number(b.dataset.owner),Number(b.dataset.chat)):openChat(Number(b.dataset.chat))))}catch(e){$('chatList').innerHTML='<div class="empty error">'+esc(e.message)+'</div>'}},250)});
 $('composer').addEventListener('submit',async e=>{e.preventDefault();if(!activeChat)return;const text=$('reply').value.trim();if(!text)return;const send=$('composer').querySelector('button');send.disabled=true;send.textContent='…';try{await api('/api/chats/'+activeChat.chat_id+'/reply',{method:'POST',body:JSON.stringify({text})});$('reply').value='';await openChat(activeChat.chat_id)}catch(e){tg?.showAlert?tg.showAlert(e.message):alert(e.message)}finally{send.disabled=false;send.textContent='➤'}});
 $('reply').addEventListener('input',()=>{const el=$('reply');el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px'});
-if(!initData){$('chatList').innerHTML='<div class="empty error"><div class="empty-icon">🔐</div><b>Откройте через Telegram</b><p>Для защиты архива приложение принимает только подписанную сессию Telegram.</p></div>'}else api('/api/me').then(me=>{isAdmin=!!me.is_admin;if(isAdmin){const b=document.createElement('button');b.className='tab';b.id='adminTab';b.textContent='Главный админ · все архивы';b.addEventListener('click',loadAdminChats);$('tabs').appendChild(b)}api('/api/settings').then(d=>{const st=$('connectionStatus'),c=d.connections||{};if(c.connected&&c.can_read_messages){st.textContent='● Архив активен';st.classList.add('good');st.title='Business-подключение активно, чтение сообщений разрешено'}else if(c.connected){st.textContent='! Проверьте права';st.classList.add('warn');st.title='Подключение есть, но право чтения сообщений не подтверждено'}else{st.textContent='○ Нет подключения';st.classList.add('off');st.title='Подключите бота в настройках Telegram Business'}const sub=$('archiveSub');if(sub)sub.textContent=(d.total_messages||0)+' сообщений в архиве · '+(c.can_reply?'ответы доступны':'только просмотр')}).catch(()=>{});loadChats()}).catch(()=>loadChats()); 
+if(!initData){$('chatList').innerHTML='<div class="empty error"><div class="empty-icon">🔐</div><b>Откройте через Telegram</b><p>Для защиты архива приложение принимает только подписанную сессию Telegram.</p></div>'}else api('/api/me').then(me=>{isAdmin=!!me.is_admin;if(isAdmin){const b=document.createElement('button');b.className='tab';b.id='adminTab';b.textContent='Главный админ · все архивы';b.addEventListener('click',loadAdminChats);$('tabs').appendChild(b)}api('/api/settings').then(d=>{const st=$('connectionStatus'),c=d.connections||{};if(c.connected){st.textContent='● Business подключён';st.classList.add('good');st.title='Подключение активно. Telegram передаёт боту сообщения из разрешённых чатов.'}else{st.textContent='○ Нет подключения';st.classList.add('off');st.title='Подключите бота в настройках Telegram Business'}const sub=$('archiveSub');if(sub)sub.textContent=(d.total_messages||0)+' сообщений в архиве · '+(c.can_reply?'ответы доступны':'только просмотр')}).catch(()=>{});loadChats()}).catch(()=>loadChats()); 
 })();
 </script>
 </body></html>
