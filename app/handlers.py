@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import json
 import re
 from pathlib import Path
 from collections import defaultdict
@@ -255,6 +256,16 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         chat_title = getattr(event.chat, "title", None) or getattr(event.chat, "first_name", None) or getattr(event.chat, "username", None) or "Личный чат"
         deleted_rows = await db.get_archived_messages(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
         await db.promote_buffered_messages(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
+        # Telegram sends message IDs for deletion, not the original attachment bytes.
+        # Try to download files from the buffered Bot API payload while file IDs are usable.
+        for row in deleted_rows:
+            try:
+                buffered_message = Message.model_validate_json(row.get("raw_json") or "{}").as_(event.bot)
+                if extract_media(buffered_message):
+                    await archive_media(buffered_message, connection, owner_id)
+            except Exception:
+                log.exception("Could not preserve media for deleted message owner=%s chat=%s message=%s",
+                              owner_id, event.chat.id, row.get("message_id"))
         await db.record_deletion_events(event.business_connection_id, event.chat.id, event.message_ids, owner_id, chat_title)
         await db.mark_deleted(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
         log.info(
