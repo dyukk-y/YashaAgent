@@ -23,7 +23,7 @@ When AI summaries are enabled, recent archived text is sent to the configured AI
 
 1. Create a bot with [@BotFather](https://t.me/BotFather).
 2. Copy .env.example to .env and set BOT_TOKEN.
-3. Install Python 3.11+ and run:
+3. Install Python 3.12+ and run:
 
    ```bash
    python -m venv .venv
@@ -47,7 +47,7 @@ After the first `/start`, everyday actions are available from the persistent but
 - **🔎 Поиск** — enter a word or phrase in the next message
 - **📊 Статистика** — saved and deleted-in-source counts
 - **🧠 Сводка** — optional AI summary (requires `AI_API_KEY`)
-- **🔔 Уведомления** — toggle grouped incoming-message digests
+- **🔔 Уведомления** — toggle grouped incoming-message digests\n- **⏱ Интервал сводки** — cycle through the notification batching interval
 - **⏸ Пауза архива / ▶️ Продолжить архив** — pause or resume storage
 - **🗑 Очистить архив** — asks for confirmation before deleting records
 
