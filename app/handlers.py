@@ -79,9 +79,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     @router.message(CommandStart())
     async def start_handler(message: Message) -> None:
         text = (
-            "Привет! Я YashaAgent — архив и управление Telegram Business в одном приложении.\\n\\n"
-            "Открой Mini App: там сообщения, поиск, история изменений и удалений, уведомления и все настройки.\\n\\n"
-            "Чтобы начать архивирование, подключи меня в настройках Telegram Business и разреши чтение сообщений."
+            "YashaAgent — архив удалённых и изменённых сообщений.\\n"
+            "Подключи бота в Telegram Business и открой приложение."
         )
         await message.answer(text, reply_markup=event_markup)
 
@@ -228,7 +227,10 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         owner_id = connection["owner_user_id"]
         previous = await db.get_archived_message(connection_id, message.chat.id, message.message_id)
         await db.promote_buffered_messages(connection_id, message.chat.id, [message.message_id], owner_id)
-        await archive_business_message(message, notify=False)
+        # Edits are the archive's primary event: persist them even if ordinary
+        # message buffering has been paused in owner settings.
+        await db.save_message(connection, message)
+        await archive_media(message, connection, owner_id)
         if not await db.notifications_enabled(owner_id):
             return
         sender = message.from_user

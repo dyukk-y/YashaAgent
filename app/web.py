@@ -241,29 +241,6 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
             return {"messages": []}
         return {"messages": await db.search(user["id"], query, 50)}
 
-    class ReplyBody(BaseModel):
-        text: str
-
-    @api.post("/api/chats/{chat_id}/reply")
-    async def reply(chat_id: int, body: ReplyBody, request: Request):
-        user = await owner_for(request)
-        text = body.text.strip()
-        if not text or len(text) > 4000:
-            raise HTTPException(status_code=400, detail="Сообщение должно содержать от 1 до 4000 символов")
-        connection = await db.reply_connection_for_chat(user["id"], chat_id)
-        if not connection:
-            raise HTTPException(status_code=403, detail="Ответ недоступен: проверьте подключение Telegram Business и право can_reply")
-        try:
-            sent = await request.app.state.telegram_bot.send_message(
-                chat_id=chat_id,
-                text=text,
-                business_connection_id=connection["connection_id"],
-            )
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail="Telegram не принял сообщение. Проверьте права подключения и активность чата.") from exc
-        await db.save_message(connection, sent, is_outgoing=True)
-        return {"ok": True, "message_id": sent.message_id, "date": int(sent.date.timestamp())}
-
     @api.get("/api/media")
     async def media_gallery(request: Request, kind: str = "all", limit: int = 60, offset: int = 0):
         user = await owner_for(request)
