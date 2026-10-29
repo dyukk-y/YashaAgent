@@ -152,6 +152,21 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
                 await query.message.edit_text(await admin_dashboard_text(), reply_markup=admin_keyboard())
                 return
             section = action[1] if len(action) > 1 else "stats"
+            if section == "user" and len(action) == 3:
+                try:
+                    owner_id = int(action[2])
+                except ValueError:
+                    await query.answer("Некорректный ID пользователя", show_alert=True)
+                    return
+                markup = app_markup("Открыть архив пользователя", owner_id=owner_id)
+                if markup:
+                    await query.message.answer(
+                        f"Открыть Mini App для пользователя ID {owner_id}:",
+                        reply_markup=markup,
+                    )
+                else:
+                    await query.message.answer("Mini App недоступно: проверьте, что WEBAPP_URL начинается с https://.")
+                return
             offset = max(0, int(action[2])) if len(action) > 2 else 0
             if section in {"users", "new"}:
                 users = await (db.admin_new_users(limit=10, offset=offset) if section == "new" else db.admin_users(limit=10, offset=offset))
@@ -164,12 +179,21 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
                         connected = "подключён" if u.get("connected") else "не подключён"
                         lines.append(f"• {username} · ID {u['owner_user_id']}\n  {connected} · чатов {u['chats']} · сообщений {u['messages']}")
                     text = ("🆕 НОВЫЕ ПОЛЬЗОВАТЕЛИ" if section == "new" else "👥 ВСЕ ПОЛЬЗОВАТЕЛИ") + f"\nПоказаны {offset + 1}–{offset + len(users)}\n\n" + "\n".join(lines)
-                rows = []
+                # Every listed user gets a direct button to open their own archive in Mini App.
+                keyboard = [
+                    [InlineKeyboardButton(
+                        text=(f"👤 @{u['owner_username']}" if u.get("owner_username") else f"👤 ID {u['owner_user_id']}")[:60],
+                        callback_data=f"adm:user:{int(u['owner_user_id'])}",
+                    )]
+                    for u in users
+                ]
+                nav = []
                 if offset > 0:
-                    rows.append(InlineKeyboardButton(text="← Назад", callback_data=f"adm:{section}:{max(0,offset-10)}"))
+                    nav.append(InlineKeyboardButton(text="← Назад", callback_data=f"adm:{section}:{max(0,offset-10)}"))
                 if len(users) == 10:
-                    rows.append(InlineKeyboardButton(text="Дальше →", callback_data=f"adm:{section}:{offset+10}"))
-                keyboard = [rows] if rows else []
+                    nav.append(InlineKeyboardButton(text="Дальше →", callback_data=f"adm:{section}:{offset+10}"))
+                if nav:
+                    keyboard.append(nav)
                 keyboard.append([InlineKeyboardButton(text="⌂ Панель", callback_data="adm:stats")])
                 await query.message.edit_text(text[:3900], reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
                 return
@@ -210,10 +234,10 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             await message.answer("Пользователь не найден среди сохранённых Business-подключений. Он должен подключить бота, а Telegram должен передать его username.")
             return
         await message.answer(
-            f"Найден @{result.get('owner_username') or username}\\n"
-            f"Telegram ID: {result['owner_user_id']}\\n"
-            f"Активное подключение: {'да' if result['connected'] else 'нет'}\\n"
-            f"Диалогов в архиве: {result['chat_count']}\\n\\n"
+            f"Найден @{result.get('owner_username') or username}\n"
+            f"Telegram ID: {result['owner_user_id']}\n"
+            f"Активное подключение: {'да' if result['connected'] else 'нет'}\n"
+            f"Диалогов в архиве: {result['chat_count']}\n\n"
             "Откройте архив именно этого пользователя кнопкой ниже.",
             reply_markup=app_markup("Открыть архив пользователя", owner_id=result["owner_user_id"]),
         )
