@@ -32,6 +32,8 @@ async def main() -> None:
         )
     )
     try:
+        # This project uses long polling; remove any stale webhook first.
+        await bot.delete_webhook(drop_pending_updates=False)
         logging.getLogger(__name__).info("Starting YashaAgent bot and Mini App API")
         await asyncio.gather(
             dispatcher.start_polling(
