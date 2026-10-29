@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     bot_token: str
     admin_user_ids: str = ""
     database_path: str = "data/yashaagent.sqlite3"
+    media_path: str = "/data/media"
     log_level: str = "INFO"
     ai_api_key: str = ""
     ai_model: str = "gpt-4.1-mini"
