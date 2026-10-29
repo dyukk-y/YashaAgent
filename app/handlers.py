@@ -9,7 +9,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
     BusinessConnection, BusinessMessagesDeleted, CallbackQuery, InlineKeyboardButton,
-    InlineKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardMarkup,
+    InlineKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardMarkup, WebAppInfo,
 )
 from openai import AsyncOpenAI
 
@@ -24,6 +24,7 @@ BTN_STATS = "📊 Статистика"
 BTN_SUMMARY = "🧠 Сводка"
 BTN_NOTIFICATIONS = "🔔 Уведомления"
 BTN_INTERVAL = "⏱ Интервал сводки"
+BTN_APP = "📱 Открыть приложение"
 BTN_PAUSE = "⏸ Пауза архива"
 BTN_RESUME = "▶️ Продолжить архив"
 BTN_FORGET = "🗑 Очистить архив"
@@ -46,6 +47,13 @@ class SearchFlow(StatesGroup):
 
 def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     router = Router()
+    menu = MENU
+    if settings.webapp_url.startswith("https://"):
+        menu = ReplyKeyboardMarkup(
+            keyboard=[[KeyboardButton(text=BTN_APP, web_app=WebAppInfo(url=settings.webapp_url))], *MENU.keyboard],
+            resize_keyboard=True,
+            input_field_placeholder="Откройте архив или выберите действие…",
+        )
     pending: dict[int, list[str]] = defaultdict(list)
     digest_tasks: dict[int, asyncio.Task] = {}
 
@@ -60,7 +68,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             body = "\n".join(f"• {item}" for item in items[:12])
             if len(items) > 12:
                 body += f"\n…и ещё {len(items) - 12}"
-            await bot.send_message(owner_id, f"{header}\n\n{body}"[:3900], reply_markup=MENU)
+            await bot.send_message(owner_id, f"{header}\n\n{body}"[:3900], reply_markup=menu)
         except Exception:
             log.exception("Could not send grouped message digest to owner=%s", owner_id)
         finally:
@@ -104,7 +112,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
 
     @router.message(SearchFlow.waiting_for_query, F.text)
     async def search_query(message: Message, state: FSMContext) -> None:
-        if message.text in {BTN_ARCHIVE, BTN_SEARCH, BTN_STATS, BTN_SUMMARY, BTN_NOTIFICATIONS, BTN_INTERVAL, BTN_PAUSE, BTN_RESUME, BTN_FORGET}:
+        if message.text in {BTN_ARCHIVE, BTN_SEARCH, BTN_STATS, BTN_SUMMARY, BTN_NOTIFICATIONS, BTN_INTERVAL, BTN_APP, BTN_PAUSE, BTN_RESUME, BTN_FORGET}:
             await state.clear()
             await message.answer("Поиск отменён.", reply_markup=MENU)
             return
@@ -231,9 +239,10 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     async def business_connection_handler(connection: BusinessConnection) -> None:
         rights = connection.rights
         can_read = bool(rights and getattr(rights, "can_read_messages", False))
+        can_reply = bool(rights and getattr(rights, "can_reply", False))
         await db.save_connection(connection_id=connection.id, owner_id=connection.user.id,
-            enabled=connection.is_enabled, can_read=can_read, updated_at=int(connection.date.timestamp()))
-        log.info("Business connection updated: owner=%s enabled=%s can_read=%s", connection.user.id, connection.is_enabled, can_read)
+            enabled=connection.is_enabled, can_read=can_read, can_reply=can_reply, updated_at=int(connection.date.timestamp()))
+        log.info("Business connection updated: owner=%s enabled=%s can_read=%s can_reply=%s", connection.user.id, connection.is_enabled, can_read, can_reply)
 
     async def archive_business_message(message: Message) -> None:
         connection_id = message.business_connection_id
@@ -254,12 +263,64 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
 
     @router.edited_business_message()
     async def edited_business_message_handler(message: Message) -> None:
+        connection_id = message.business_connection_id
+        if not connection_id:
+            return
+        connection = await db.get_connection(connection_id)
+        if not connection or not connection["is_enabled"] or not connection["can_read_messages"]:
+            return
+        owner_id = connection["owner_user_id"]
+        previous = await db.get_archived_message(connection_id, message.chat.id, message.message_id)
         await archive_business_message(message)
+        if not await db.notifications_enabled(owner_id):
+            return
+        sender = message.from_user
+        name = " ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else "Контакт"
+        old_text = (previous or {}).get("text", "") or "[текст не был сохранён]"
+        new_text = message.text or message.caption or "[сообщение без текста]"
+        old_text = old_text[:1200]
+        new_text = new_text[:1200]
+        try:
+            await message.bot.send_message(
+                owner_id,
+                f"✏️ <b>Сообщение изменено</b>\\nЧат: {getattr(message.chat, 'title', None) or getattr(message.chat, 'first_name', None) or 'Личный чат'}\\nАвтор: {name}\\n\\n<b>Было:</b>\\n{old_text}\\n\\n<b>Стало:</b>\\n{new_text}",
+                reply_markup=menu,
+                parse_mode="HTML",
+            )
+        except Exception:
+            log.exception("Could not send edit alert to owner=%s", owner_id)
 
     @router.deleted_business_messages()
     async def deleted_business_messages_handler(event: BusinessMessagesDeleted) -> None:
         connection = await db.get_connection(event.business_connection_id)
-        if connection:
-            await db.mark_deleted(event.business_connection_id, event.chat.id, event.message_ids, connection["owner_user_id"])
+        if not connection or not connection["is_enabled"]:
+            return
+        owner_id = connection["owner_user_id"]
+        deleted_rows = await db.get_archived_messages(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
+        await db.mark_deleted(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
+        if not await db.notifications_enabled(owner_id):
+            return
+        if deleted_rows:
+            lines = []
+            for row in deleted_rows[:10]:
+                text = (row["text"] or "[сообщение без текста]").replace("\\n", " ")
+                if len(text) > 700:
+                    text = text[:697] + "…"
+                lines.append(f"• {row['sender_name'] or 'Контакт'}: {text}")
+            if len(deleted_rows) > 10:
+                lines.append(f"…и ещё {len(deleted_rows) - 10}")
+            body = "\\n".join(lines)
+        else:
+            body = "Telegram сообщил об удалении, но текста этих сообщений нет в архиве."
+        chat_name = getattr(event.chat, "title", None) or getattr(event.chat, "first_name", None) or "Личный чат"
+        try:
+            await event.bot.send_message(
+                owner_id,
+                f"🗑 <b>Сообщение удалено</b>\\nЧат: {chat_name}\\nУдалений в событии: {len(event.message_ids)}\\n\\n{body}"[:3900],
+                reply_markup=menu,
+                parse_mode="HTML",
+            )
+        except Exception:
+            log.exception("Could not send deletion alert to owner=%s", owner_id)
 
     return router
