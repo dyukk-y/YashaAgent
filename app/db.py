@@ -66,7 +66,9 @@ class ArchiveDB:
                 CREATE TABLE IF NOT EXISTS notification_settings (
                     owner_user_id INTEGER PRIMARY KEY,
                     enabled INTEGER NOT NULL DEFAULT 1,
-                    interval_seconds INTEGER NOT NULL DEFAULT 60
+                    interval_seconds INTEGER NOT NULL DEFAULT 60,
+                    notify_edits INTEGER NOT NULL DEFAULT 1,
+                    notify_deletions INTEGER NOT NULL DEFAULT 1
                 );
                 CREATE TABLE IF NOT EXISTS hidden_chats (
                     owner_user_id INTEGER NOT NULL,
