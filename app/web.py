@@ -7,7 +7,6 @@ from urllib.parse import parse_qsl
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from app.db import ArchiveDB
@@ -104,12 +103,11 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str) -> FastAPI:
             )
         except Exception as exc:
             raise HTTPException(status_code=502, detail="Telegram не принял сообщение. Проверьте права подключения и активность чата.") from exc
-        await db.save_message(connection, sent)
+        await db.save_message(connection, sent, is_outgoing=True)
         return {"ok": True, "message_id": sent.message_id, "date": int(sent.date.timestamp())}
 
     @api.get("/")
     async def index():
         return FileResponse(WEB_ROOT / "index.html")
 
-    api.mount("/assets", StaticFiles(directory=WEB_ROOT / "assets", check_dir=False), name="assets")
     return api
