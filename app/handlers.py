@@ -154,7 +154,9 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if not connection or not connection["is_enabled"]:
             return
         owner_id = connection["owner_user_id"]
+        chat_title = getattr(event.chat, "title", None) or getattr(event.chat, "first_name", None) or getattr(event.chat, "username", None) or "Личный чат"
         deleted_rows = await db.get_archived_messages(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
+        await db.record_deletion_events(event.business_connection_id, event.chat.id, event.message_ids, owner_id, chat_title)
         await db.mark_deleted(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
         log.info(
             "Business deletion event owner=%s chat=%s ids=%s archived_matches=%s",
