@@ -79,6 +79,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
 
     @router.message(CommandStart())
     async def start_handler(message: Message) -> None:
+        if message.from_user:
+            await db.register_admin_user(message.from_user.id, message.from_user.username or "")
         text = (
             "YashaAgent — архив удалённых и изменённых сообщений.\\n"
             "Подключи бота в Telegram Business и открой приложение."
