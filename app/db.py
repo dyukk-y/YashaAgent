@@ -27,7 +27,13 @@ class ArchiveDB:
                     archive_enabled INTEGER NOT NULL DEFAULT 1,
                     notifications_enabled INTEGER NOT NULL DEFAULT 1
                 );
-                CREATE TABLE IF NOT EXISTS archived_messages (
+                CREATE TABLE IF NOT EXISTS message_buffer (
+ connection_id TEXT NOT NULL, owner_user_id INTEGER NOT NULL, chat_id INTEGER NOT NULL,
+ message_id INTEGER NOT NULL, date_ts INTEGER NOT NULL, sender_user_id INTEGER,
+ sender_name TEXT NOT NULL DEFAULT '', text TEXT NOT NULL DEFAULT '', chat_title TEXT NOT NULL DEFAULT '',
+ raw_json TEXT NOT NULL DEFAULT '{}', PRIMARY KEY(connection_id, chat_id, message_id));
+ CREATE INDEX IF NOT EXISTS idx_message_buffer_owner_chat ON message_buffer(owner_user_id, chat_id, date_ts);
+ CREATE TABLE IF NOT EXISTS archived_messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     connection_id TEXT NOT NULL,
                     owner_user_id INTEGER NOT NULL,
@@ -182,6 +188,42 @@ class ArchiveDB:
             await db.execute("INSERT INTO notification_settings(owner_user_id, enabled, interval_seconds) VALUES(?,1,?) ON CONFLICT(owner_user_id) DO UPDATE SET interval_seconds=excluded.interval_seconds", (owner_id, seconds))
             await db.commit()
 
+    async def buffer_message(self, connection: dict[str, Any], message: Any, is_outgoing: bool = False) -> None:
+        """Keep a bounded short-term snapshot; persist permanently only when an event occurs."""
+        sender = message.from_user
+        sender_name = "Вы" if is_outgoing else (" ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else "")
+        sender_user_id = connection["owner_user_id"] if is_outgoing else (sender.id if sender else None)
+        chat = message.chat
+        chat_title = getattr(chat, "title", None) or getattr(chat, "first_name", None) or getattr(chat, "username", None) or str(chat.id)
+        payload = message.model_dump(mode="json", exclude_none=True)
+        text = message.text or message.caption or ""
+        date_ts = int(message.date.timestamp())
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("""INSERT INTO message_buffer(connection_id,owner_user_id,chat_id,message_id,date_ts,sender_user_id,sender_name,text,chat_title,raw_json)
+                VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id,chat_id,message_id) DO UPDATE SET
+                date_ts=excluded.date_ts,sender_user_id=excluded.sender_user_id,sender_name=excluded.sender_name,
+                text=excluded.text,chat_title=excluded.chat_title,raw_json=excluded.raw_json""",
+                (connection["connection_id"], connection["owner_user_id"], chat.id, message.message_id,
+                 date_ts, sender_user_id, sender_name, text, chat_title, json.dumps(payload, ensure_ascii=False)))
+            await db.execute("""DELETE FROM message_buffer WHERE owner_user_id=? AND rowid IN
+                (SELECT rowid FROM message_buffer WHERE owner_user_id=? ORDER BY date_ts DESC LIMIT -1 OFFSET 5000)""",
+                (connection["owner_user_id"], connection["owner_user_id"]))
+            await db.commit()
+
+    async def promote_buffered_messages(self, connection_id: str, chat_id: int, message_ids: list[int], owner_id: int) -> None:
+        if not message_ids:
+            return
+        async with aiosqlite.connect(self.path) as db:
+            placeholders = ",".join("?" for _ in message_ids)
+            await db.execute(f"""INSERT INTO archived_messages(connection_id,owner_user_id,chat_id,message_id,date_ts,sender_user_id,sender_name,text,chat_title,raw_json)
+                SELECT connection_id,owner_user_id,chat_id,message_id,date_ts,sender_user_id,sender_name,text,chat_title,raw_json
+                FROM message_buffer WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})
+                ON CONFLICT(connection_id,chat_id,message_id) DO NOTHING""",
+                (connection_id, owner_id, chat_id, *message_ids))
+            await db.execute(f"DELETE FROM message_buffer WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})",
+                (connection_id, owner_id, chat_id, *message_ids))
+            await db.commit()
+
     async def save_message(self, connection: dict[str, Any], message: Any, is_outgoing: bool = False) -> None:
         sender = message.from_user
         sender_name = "Вы" if is_outgoing else (" ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else "")
@@ -215,6 +257,10 @@ class ArchiveDB:
             db.row_factory = aiosqlite.Row
             cur = await db.execute("SELECT sender_name,text FROM archived_messages WHERE connection_id=? AND chat_id=? AND message_id=?", (connection_id, chat_id, message_id))
             row = await cur.fetchone()
+            if row:
+                return dict(row)
+            cur = await db.execute("SELECT sender_name,text FROM message_buffer WHERE connection_id=? AND chat_id=? AND message_id=?", (connection_id, chat_id, message_id))
+            row = await cur.fetchone()
             return dict(row) if row else None
 
     async def get_archived_messages(self, connection_id: str, chat_id: int, message_ids: list[int], owner_id: int) -> list[dict[str, Any]]:
@@ -224,8 +270,10 @@ class ArchiveDB:
             db.row_factory = aiosqlite.Row
             placeholders = ",".join("?" for _ in message_ids)
             cur = await db.execute(
-                f"SELECT message_id,sender_name,text FROM archived_messages WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders}) ORDER BY date_ts",
-                (connection_id, owner_id, chat_id, *message_ids),
+                f"""SELECT message_id,sender_name,text FROM archived_messages WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})
+                    UNION SELECT message_id,sender_name,text FROM message_buffer WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})
+                    ORDER BY message_id""",
+                (connection_id, owner_id, chat_id, *message_ids, connection_id, owner_id, chat_id, *message_ids),
             )
             return [dict(row) for row in await cur.fetchall()]
 
