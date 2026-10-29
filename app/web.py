@@ -84,6 +84,13 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
             raise HTTPException(status_code=404, detail="Чат не найден в архиве")
         return {"messages": await db.chat_messages(owner_id, chat_id, min(max(limit, 1), 200), before)}
 
+    @api.get("/api/admin/chats/{owner_id}/{chat_id}/messages/{message_id}/edits")
+    async def admin_message_edits(owner_id: int, chat_id: int, message_id: int, request: Request):
+        await require_admin(request)
+        if not await db.owner_has_chat(owner_id, chat_id):
+            raise HTTPException(status_code=404, detail="Чат не найден в архиве")
+        return {"edits": await db.edit_history(owner_id, chat_id, message_id)}
+
     @api.post("/api/chats/{chat_id}/hide")
     async def hide_chat(chat_id: int, request: Request):
         user = await owner_for(request)
@@ -177,6 +184,13 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
         if not await db.owner_has_chat(user["id"], chat_id):
             raise HTTPException(status_code=404, detail="Чат не найден в вашем архиве")
         return {"messages": await db.chat_messages(user["id"], chat_id, min(max(limit, 1), 200), before)}
+
+    @api.get("/api/chats/{chat_id}/messages/{message_id}/edits")
+    async def message_edits(chat_id: int, message_id: int, request: Request):
+        user = await owner_for(request)
+        if not await db.owner_has_chat(user["id"], chat_id):
+            raise HTTPException(status_code=404, detail="Чат не найден в вашем архиве")
+        return {"edits": await db.edit_history(user["id"], chat_id, message_id)}
 
     @api.get("/api/search")
     async def search(request: Request, q: str):
