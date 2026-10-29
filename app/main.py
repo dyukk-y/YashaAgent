@@ -50,6 +50,9 @@ async def main() -> None:
     dispatcher.include_router(setup_handlers(db, settings))
     web_app = create_web_app(db, bot, settings.bot_token, settings.admins, settings.media_path)
     web_app.state.ai_api_key = settings.ai_api_key
+    web_app.state.media_max_file_mb = max(1, settings.media_max_file_mb)
+    web_app.state.media_quota_mb = max(1, settings.media_quota_mb)
+    web_app.state.media_retention_days = max(1, settings.media_retention_days)
     web_app.state.ai_model = settings.ai_model
     retention_task = asyncio.create_task(media_retention_loop(db, settings.media_path, settings.media_retention_days))
     web_server = uvicorn.Server(
