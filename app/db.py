@@ -123,9 +123,10 @@ class ArchiveDB:
             await db.execute("INSERT INTO notification_settings(owner_user_id, enabled, interval_seconds) VALUES(?,1,?) ON CONFLICT(owner_user_id) DO UPDATE SET interval_seconds=excluded.interval_seconds", (owner_id, seconds))
             await db.commit()
 
-    async def save_message(self, connection: dict[str, Any], message: Any) -> None:
+    async def save_message(self, connection: dict[str, Any], message: Any, is_outgoing: bool = False) -> None:
         sender = message.from_user
-        sender_name = " ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else ""
+        sender_name = "Вы" if is_outgoing else (" ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else "")
+        sender_user_id = connection["owner_user_id"] if is_outgoing else (sender.id if sender else None)
         chat = message.chat
         chat_title = getattr(chat, "title", None) or getattr(chat, "first_name", None) or getattr(chat, "username", None) or str(chat.id)
         payload = message.model_dump(mode="json", exclude_none=True)
@@ -146,7 +147,7 @@ class ArchiveDB:
                 date_ts=excluded.date_ts, sender_user_id=excluded.sender_user_id, sender_name=excluded.sender_name,
                 text=excluded.text, chat_title=excluded.chat_title, raw_json=excluded.raw_json, is_deleted=0""",
                 (connection["connection_id"], connection["owner_user_id"], chat.id, message.message_id,
-                 date_ts, sender.id if sender else None, sender_name, text, chat_title, json.dumps(payload, ensure_ascii=False)))
+                 date_ts, sender_user_id, sender_name, text, chat_title, json.dumps(payload, ensure_ascii=False)))
             await db.commit()
 
     async def get_archived_message(self, connection_id: str, chat_id: int, message_id: int) -> dict[str, Any] | None:
