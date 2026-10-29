@@ -131,6 +131,51 @@ body{background:#050505!important}
 .media-card-actions button{background:#111!important;color:#fff!important;border:1px solid #555!important}
 .media-card-actions button:hover,.history-btn:hover{background:#222!important}
 @media(prefers-color-scheme:light){:root{color-scheme:dark}}
+
+/* Refined YashaAgent UI — compact, premium, event-first layout */
+:root{color-scheme:dark;--bg:#090a0d;--fg:#f5f6fa;--mute:#9ba2b4;--line:#252936;--card:#11141b;--ibg:#f5f6fa;--ifg:#090a0d;--danger:#ff647c;--violet:#a7a0ff;--blue:#8fb7ff;--mint:#8ce6c0}
+html,body{background:var(--bg)!important;color:var(--fg)!important;font-family:Onest,system-ui,sans-serif}
+body{background:radial-gradient(ellipse at 12% 0%,rgba(105,93,220,.12),transparent 34%),var(--bg)!important}
+.app{max-width:1500px;margin:0 auto;padding:16px 20px 24px}
+.top{background:rgba(9,10,13,.9)!important;backdrop-filter:blur(18px);border-bottom:1px solid var(--line)!important;box-shadow:none!important}
+.brand .logo,.avatar{border-radius:13px!important}
+.brand .logo{background:linear-gradient(135deg,#f8f8ff,#c9c9ff)!important;color:#111!important;box-shadow:0 4px 18px #a7a0ff24!important}
+.brand h1,.brand .name{font-family:Unbounded,sans-serif;letter-spacing:-.04em}
+.search{background:#10131a!important;border:1px solid #34394a!important;border-radius:15px!important;box-shadow:inset 0 1px 0 #ffffff08!important}
+.search:focus-within{border-color:#a7a0ff!important;box-shadow:0 0 0 3px #a7a0ff18!important}
+.search input{color:var(--fg)!important}
+.tabs{border-bottom:1px solid var(--line)!important;gap:9px!important;padding:13px 0 16px!important}
+.tab,.media-filters button{background:#11141b!important;color:#c2c7d6!important;border:1px solid #2a2f3e!important;border-radius:11px!important;padding:10px 15px!important;transition:all .16s ease!important}
+.tab:hover,.media-filters button:hover{border-color:#747b9b!important;color:#fff!important;transform:translateY(-1px)}
+.tab.active,.media-filters button.active{background:#efefff!important;color:#11131b!important;border-color:#efefff!important;box-shadow:0 5px 18px #d0ceff18!important}
+.layout.split{gap:16px!important}
+.layout.split .chat-list{border-right:1px solid var(--line)!important;padding-right:14px!important}
+.chat-row,.conversation,.event-card,.media-card,.media-stat,.revision,.event-diff{background:linear-gradient(150deg,#141720,#0e1016)!important;border:1px solid #292e3d!important;border-radius:15px!important;box-shadow:0 8px 26px #0002!important}
+.chat-row{margin:0 0 9px!important;overflow:hidden}
+.chat-item:hover,.chat-item.selected{background:#202437!important}
+.chat-item{padding:13px!important;gap:11px!important}
+.avatar{background:#202538!important;color:#f4f3ff!important;border:1px solid #3a4057!important}
+.chat-title{font-weight:700!important}
+.preview{color:#929bb3!important}
+.pill,.event-label,.event-type,.media-status,.media-album-label{border-radius:7px!important}
+.status.good{background:#12241e!important;color:#8ce6c0!important;border:1px solid #275b49!important}
+.conversation{padding:16px!important}
+.bubble{background:#171b25!important;border:1px solid #2b3141!important;border-radius:15px 15px 15px 5px!important;box-shadow:none!important;color:#f5f6fa!important;max-width:min(86%,760px)!important}
+.bubble.mine{background:#e8e9ff!important;color:#171827!important;border-color:#d0d2ff!important;border-radius:15px 15px 5px 15px!important}
+.bubble.deleted{border-color:#713141!important;background:#211219!important}
+.bubble.edited{border-color:#5b548c!important}
+.event-card{display:block!important;text-align:left!important;width:100%;padding:15px!important;margin:0 0 10px!important;cursor:pointer!important;transition:border-color .15s,transform .15s!important}
+.event-card:hover{border-color:#7772bf!important;transform:translateY(-1px)}
+.event-body{border-radius:10px!important;background:#19121a!important;border:1px solid #4a2633!important;padding:12px!important}
+.event-open{color:#b8b2ff!important}
+.event-type.deleted{background:#35151f!important;color:#ff8da0!important}
+.event-type.edited{background:#211e3b!important;color:#c6c0ff!important}
+.composer textarea{background:#11141b!important;border:1px solid #34394a!important;border-radius:12px!important;color:#fff!important}
+.send{background:#efefff!important;color:#11131b!important;border-radius:12px!important}
+.hide-chat,.history-btn,.media-card-actions button,.media-open{border-radius:9px!important}
+.empty{border:1px dashed #33394a!important;border-radius:15px!important;background:#11141b80!important;padding:28px!important}
+.media-cover{border-radius:12px!important;background:#191d29!important}
+@media(max-width:619px){.app{padding:10px 12px 18px}.conversation{border-radius:14px!important}.layout.split .chat-list{border-right:0!important}.tab{padding:9px 12px!important}}
 </style>
 </head>
 <body>
@@ -163,7 +208,6 @@ function renderMessages(items){const box=$('messages');if(!items.length){box.inn
 box.innerHTML=items.map(m=>{const deleted=!!m.is_deleted,edited=!!m.edited;const cls=deleted?'deleted':edited?'edited':'';const label=deleted?'🗑 УДАЛЕНО':edited?'✎ ИЗМЕНЕНО':(m.is_outgoing?'ВЫ':'');let media='';if(Array.isArray(m.media)&&m.media.length){media='<div class="media-attachments">'+m.media.map(a=>{const label=({photo:'Фото',video:'Видео',animation:'GIF',document:'Файл',sticker:'Стикер',voice:'Голосовое',audio:'Аудио',video_note:'Видео-кружок'})[a.media_type]||'Вложение';const status=a.status==='stored'?'Открыть / скачать':a.status==='failed'?'Файл не удалось сохранить':'Сохраняется…';const url=adminMode?'/api/admin/chats/'+Number(activeChat.owner_user_id)+'/'+Number(activeChat.chat_id)+'/messages/'+Number(m.message_id)+'/media/'+Number(a.id):'/api/chats/'+Number(activeChat.chat_id)+'/messages/'+Number(m.message_id)+'/media/'+Number(a.id);return a.status==='stored'?'<button class="media-open" data-media-url="'+esc(url)+'" data-media-type="'+esc(a.media_type)+'" data-media-mime="'+esc(a.mime_type||'')+'" data-media-name="'+esc(a.file_name||label)+'">📎 '+esc(label)+' · '+esc(status)+'</button>':'<div class="media-chip">📎 '+esc(label)+' · '+esc(status)+'</div>'}).join('')+'</div>'}
 const history=edited?'<button class="history-btn" data-history="'+Number(m.message_id)+'">↺ Показать всю историю правок</button><div class="history-panel" id="history-'+Number(m.message_id)+'" hidden></div>':'';
 return '<article id="message-'+Number(m.message_id)+'" class="bubble '+(m.is_outgoing?'mine ':'')+cls+'">'+(label?'<div class="event-label">'+esc(label)+'</div>':'')+'<div class="bubble-text">'+esc(m.text||m.caption||'[Сообщение без текста]')+'</div>'+media+(m.previous_text&&edited?'<div class="previous-snippet"><span>Предыдущая версия</span><div>'+esc(m.previous_text)+'</div></div>':'')+history+'<div class="stamp">'+esc(timeLabel(m.date_ts))+'</div></article>'}).join('');
-       if(mime.startsWith('image/')&&mime!=='image/svg+xml'){const img=document.createElement('img');img.src=objectUrl;img.alt=btn.dataset.galleryName||'Изображение';btn.dataset.previewUrl=objectUrl;if(btn.classList.contains('media-cover'))btn.replaceChildren(img);else btn.textContent='Открыть';showMediaLightbox(img.cloneNode())}
 box.querySelectorAll('[data-history]').forEach(btn=>btn.addEventListener('click',async()=>{const id=Number(btn.dataset.history),panel=$('history-'+id);if(!panel)return;if(!panel.hidden){panel.hidden=true;btn.textContent='↺ Показать всю историю правок';return}panel.hidden=false;panel.innerHTML='<div class="spinner">Загружаю версии…</div>';btn.textContent='Скрыть историю';try{const url=adminMode?'/api/admin/chats/'+Number(activeChat.owner_user_id)+'/'+Number(activeChat.chat_id)+'/messages/'+id+'/edits':'/api/chats/'+Number(activeChat.chat_id)+'/messages/'+id+'/edits';const data=await api(url);const edits=data.edits||[];panel.innerHTML=edits.length?edits.map((v,i)=>'<div class="revision"><div class="revision-head"><b>Версия '+(i+1)+'</b><time>'+esc(timeLabel(v.edited_at))+'</time></div><div class="revision-label">БЫЛО</div><div>'+esc(v.old_text||'[Исходный текст не сохранён]')+'</div><div class="revision-label">СТАЛО</div><div>'+esc(v.new_text||'[Пустое сообщение / медиа]')+'</div></div>').join(''):'<div class="revision">История версий для этого сообщения не найдена.</div>'}catch(err){panel.innerHTML='<div class="revision error">'+esc(err.message)+'</div>'}}));
 box.scrollTop=box.scrollHeight}
 async function openAdminChat(ownerId,id){activeChat=adminChats.find(c=>Number(c.chat_id)===id&&Number(c.owner_user_id)===ownerId)||{chat_id:id,owner_user_id:ownerId,title:'Диалог'};$('layout').classList.add('mobile-chat-open');$('personName').textContent=(activeChat.title||'Диалог')+' · владелец '+ownerId;$('personAvatar').textContent=(activeChat.title||'?')[0].toUpperCase();$('personSub').textContent='Админ-просмотр · только чтение';$('conversation').classList.add('open');$('layout').classList.add('split');$('footer').classList.add('hide');$('composer').classList.add('hide');$('messages').innerHTML='<div class="spinner">Загружаю архив…</div>';try{const d=await api('/api/admin/chats/'+ownerId+'/'+id+'/messages');renderMessages(d.messages||[])}catch(e){$('messages').innerHTML='<div class="empty error">'+esc(e.message)+'</div>'}}
