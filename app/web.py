@@ -158,6 +158,15 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
     @api.post("/api/archive/clear")
     async def clear_archive(request: Request):
         user = await owner_for(request)
+        root = request.app.state.media_root
+        for raw_path in await db.owner_media_paths(user["id"]):
+            path = Path(raw_path).resolve()
+            try:
+                path.relative_to(root)
+                path.unlink(missing_ok=True)
+            except (ValueError, OSError):
+                # Never follow paths outside the configured media directory.
+                continue
         deleted = await db.forget_owner(user["id"])
         return {"ok": True, "deleted": deleted}
 
@@ -207,6 +216,14 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
             raise HTTPException(status_code=400, detail="Тип события должен быть deleted или edited")
         return {"events": await db.list_events(user["id"], kind, min(max(limit, 1), 200))}
 
+    @api.get("/api/admin/search")
+    async def admin_search(request: Request, q: str):
+        await require_admin(request)
+        query = q.strip()
+        if not query:
+            return {"messages": []}
+        return {"messages": await db.search(None, query, 100)}
+
     @api.get("/api/search")
     async def search(request: Request, q: str):
         user = await owner_for(request)
@@ -237,6 +254,50 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
             raise HTTPException(status_code=502, detail="Telegram не принял сообщение. Проверьте права подключения и активность чата.") from exc
         await db.save_message(connection, sent, is_outgoing=True)
         return {"ok": True, "message_id": sent.message_id, "date": int(sent.date.timestamp())}
+
+    @api.get("/api/media")
+    async def media_gallery(request: Request, kind: str = "all", limit: int = 60, offset: int = 0):
+        user = await owner_for(request)
+        allowed = {"all", "photo", "video", "animation", "document", "sticker", "voice", "audio", "video_note"}
+        if kind not in allowed:
+            raise HTTPException(status_code=400, detail="Неизвестный тип вложения")
+        items = await db.list_media(user["id"], kind, min(max(limit, 1), 100), max(offset, 0))
+        usage = await db.media_usage(user["id"])
+        return {"items": items, "usage": usage,
+                "limits": {"max_file_mb": request.app.state.media_max_file_mb,
+                           "quota_mb": request.app.state.media_quota_mb,
+                           "retention_days": request.app.state.media_retention_days}}
+
+    @api.get("/api/media/stats")
+    async def media_stats(request: Request):
+        user = await owner_for(request)
+        usage = await db.media_usage(user["id"])
+        return {"usage": usage,
+                "limits": {"max_file_mb": request.app.state.media_max_file_mb,
+                           "quota_mb": request.app.state.media_quota_mb,
+                           "retention_days": request.app.state.media_retention_days}}
+
+    @api.get("/api/admin/media")
+    async def admin_media_gallery(request: Request, kind: str = "all", limit: int = 60, offset: int = 0):
+        await require_admin(request)
+        allowed = {"all", "photo", "video", "animation", "document", "sticker", "voice", "audio", "video_note"}
+        if kind not in allowed:
+            raise HTTPException(status_code=400, detail="Неизвестный тип вложения")
+        items = await db.list_media(None, kind, min(max(limit, 1), 100), max(offset, 0))
+        usage = await db.media_usage()
+        return {"items": items, "usage": usage,
+                "limits": {"max_file_mb": request.app.state.media_max_file_mb,
+                           "quota_mb": request.app.state.media_quota_mb,
+                           "retention_days": request.app.state.media_retention_days}}
+
+    @api.get("/api/admin/media/stats")
+    async def admin_media_stats(request: Request):
+        await require_admin(request)
+        usage = await db.media_usage()
+        return {"usage": usage,
+                "limits": {"max_file_mb": request.app.state.media_max_file_mb,
+                           "quota_mb": request.app.state.media_quota_mb,
+                           "retention_days": request.app.state.media_retention_days}}
 
     @api.get("/api/chats/{chat_id}/messages/{message_id}/media/{media_id}")
     async def archived_media(chat_id: int, message_id: int, media_id: int, request: Request):

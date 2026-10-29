@@ -343,10 +343,10 @@ class ArchiveDB:
             await db.commit()
             return int(row[0])
 
-    async def update_media_record(self, media_id: int, stored_path: str = "", status: str = "stored", error: str = "") -> None:
+    async def update_media_record(self, media_id: int, stored_path: str = "", status: str = "stored", error: str = "", file_size: int | None = None) -> None:
         async with aiosqlite.connect(self.path) as db:
-            await db.execute("UPDATE archived_media SET stored_path=?, status=?, error=? WHERE id=?",
-                             (stored_path, status, error[:500], media_id))
+            await db.execute("UPDATE archived_media SET stored_path=?, status=?, error=?, file_size=COALESCE(?,file_size) WHERE id=?",
+                             (stored_path, status, error[:500], file_size, media_id))
             await db.commit()
 
     async def message_media(self, owner_id: int, chat_id: int, message_id: int) -> list[dict[str, Any]]:
@@ -368,6 +368,66 @@ class ArchiveDB:
                 (owner_id, chat_id, message_id, media_id),
             )).fetchone()
             return dict(row) if row else None
+
+    async def list_media(self, owner_id: int | None, media_type: str = "all", limit: int = 60, offset: int = 0) -> list[dict[str, Any]]:
+        allowed = {"photo", "video", "animation", "document", "sticker", "voice", "audio", "video_note"}
+        if media_type != "all" and media_type not in allowed:
+            return []
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            sql = """SELECT m.id,m.owner_user_id,m.chat_id,m.message_id,m.media_type,m.file_name,m.mime_type,
+                            m.file_size,m.status,m.error,m.created_at,a.chat_title,a.sender_name,a.text,
+                            a.date_ts
+                     FROM archived_media m
+                     LEFT JOIN archived_messages a ON a.connection_id=m.connection_id AND a.owner_user_id=m.owner_user_id
+                       AND a.chat_id=m.chat_id AND a.message_id=m.message_id
+                     WHERE m.status IN ('stored','failed','pending','expired','quota','too_large')"""
+            args: list[Any] = []
+            if owner_id is not None:
+                sql += " AND m.owner_user_id=?"
+                args.append(owner_id)
+            if media_type != "all":
+                sql += " AND m.media_type=?"
+                args.append(media_type)
+            sql += " ORDER BY m.created_at DESC, m.id DESC LIMIT ? OFFSET ?"
+            args.extend([min(max(limit, 1), 100), max(offset, 0)])
+            cur = await db.execute(sql, args)
+            return [dict(row) for row in await cur.fetchall()]
+
+    async def media_usage(self, owner_id: int | None = None) -> dict[str, int]:
+        async with aiosqlite.connect(self.path) as db:
+            if owner_id is None:
+                row = await (await db.execute(
+                    "SELECT COALESCE(SUM(file_size),0), COUNT(*) FROM archived_media WHERE status='stored'"
+                )).fetchone()
+            else:
+                row = await (await db.execute(
+                    "SELECT COALESCE(SUM(file_size),0), COUNT(*) FROM archived_media WHERE owner_user_id=? AND status='stored'",
+                    (owner_id,),
+                )).fetchone()
+            return {"bytes": int(row[0] or 0), "files": int(row[1] or 0)}
+
+    async def media_usage_for_owner(self, owner_id: int) -> int:
+        usage = await self.media_usage(owner_id)
+        return usage["bytes"]
+
+    async def expire_media_before(self, cutoff_ts: int) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                "SELECT id,stored_path FROM archived_media WHERE status='stored' AND created_at < ? AND stored_path != ''",
+                (cutoff_ts,),
+            )
+            rows = [dict(row) for row in await cur.fetchall()]
+            return rows
+
+    async def mark_media_expired(self, media_id: int) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "UPDATE archived_media SET status='expired', stored_path='', error='Истёк срок хранения' WHERE id=? AND status='stored'",
+                (media_id,),
+            )
+            await db.commit()
 
     async def reply_connection_for_chat(self, owner_id: int, chat_id: int) -> dict[str, Any] | None:
         async with aiosqlite.connect(self.path) as db:
@@ -400,10 +460,19 @@ class ArchiveDB:
             await db.execute(f"UPDATE archived_messages SET is_deleted=1 WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})", (connection_id, owner_id, chat_id, *message_ids))
             await db.commit()
 
-    async def search(self, owner_id: int, query: str, limit: int = 15) -> list[dict[str, Any]]:
+    async def search(self, owner_id: int | None, query: str, limit: int = 15) -> list[dict[str, Any]]:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
-            cur = await db.execute("SELECT chat_id,message_id,date_ts,sender_name,text,is_deleted FROM archived_messages WHERE owner_user_id=? AND text LIKE ? ORDER BY date_ts DESC LIMIT ?", (owner_id, f"%{query}%", limit))
+            if owner_id is None:
+                cur = await db.execute(
+                    "SELECT owner_user_id,chat_id,message_id,date_ts,sender_name,text,is_deleted FROM archived_messages WHERE text LIKE ? ORDER BY date_ts DESC LIMIT ?",
+                    (f"%{query}%", limit),
+                )
+            else:
+                cur = await db.execute(
+                    "SELECT owner_user_id,chat_id,message_id,date_ts,sender_name,text,is_deleted FROM archived_messages WHERE owner_user_id=? AND text LIKE ? ORDER BY date_ts DESC LIMIT ?",
+                    (owner_id, f"%{query}%", limit),
+                )
             return [dict(row) for row in await cur.fetchall()]
 
     async def recent_texts(self, owner_id: int, limit: int = 80) -> list[str]:
@@ -418,11 +487,22 @@ class ArchiveDB:
             total, deleted = await cur.fetchone()
             return int(total or 0), int(deleted or 0)
 
+    async def owner_media_paths(self, owner_id: int) -> list[str]:
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                "SELECT stored_path FROM archived_media WHERE owner_user_id=? AND status='stored' AND stored_path != ''",
+                (owner_id,),
+            )
+            return [str(row[0]) for row in await cur.fetchall() if row[0]]
+
     async def forget_owner(self, owner_id: int) -> int:
         async with aiosqlite.connect(self.path) as db:
             cur = await db.execute("SELECT COUNT(*) FROM archived_messages WHERE owner_user_id=?", (owner_id,))
             count = int((await cur.fetchone())[0])
             await db.execute("DELETE FROM archived_message_edits WHERE owner_user_id=?", (owner_id,))
+            await db.execute("DELETE FROM archived_media WHERE owner_user_id=?", (owner_id,))
+            await db.execute("DELETE FROM deleted_message_events WHERE owner_user_id=?", (owner_id,))
+            await db.execute("DELETE FROM hidden_chats WHERE owner_user_id=?", (owner_id,))
             await db.execute("DELETE FROM archived_messages WHERE owner_user_id=?", (owner_id,))
             await db.commit()
             return count

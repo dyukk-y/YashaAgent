@@ -53,7 +53,7 @@ After the first `/start`, everyday actions are available from the persistent but
 - **⏸ Пауза архива / ▶️ Продолжить архив** — pause or resume storage
 - **🗑 Очистить архив** — asks for confirmation before deleting records
 
-The Mini App opens from the **📱 Открыть приложение** button when `WEBAPP_URL` is configured. It validates Telegram's signed `initData` on every API request and scopes all archive queries to the authenticated Telegram user. Replies are sent through the selected Business connection and require the connection's `can_reply` right; Telegram limits this to eligible private chats active in the last 24 hours.
+The Mini App opens from the **📱 Открыть приложение** button when `WEBAPP_URL` is configured. It includes a media library with type filters, image previews, video/audio playback, download controls, storage usage and retention status. Media endpoints validate Telegram's signed `initData`; admin media browsing is restricted to `ADMIN_USER_IDS`. It validates Telegram's signed `initData` on every API request and scopes all archive queries to the authenticated Telegram user. Replies are sent through the selected Business connection and require the connection's `can_reply` right; Telegram limits this to eligible private chats active in the last 24 hours.
 
 The owner must start the bot with `/start` before it can send them private event alerts. The bot only receives the business messages and changes Telegram makes available after the owner explicitly connects it and grants rights. It cannot load old chat history on demand.
 
@@ -66,6 +66,6 @@ pytest
 
 ## Before production
 
-Telegram's deletion update contains chat/message identifiers, not the deleted message text or the identity of the person who deleted it. YashaAgent can display archived text for a deleted message only if it stored that message earlier; it cannot reliably say who deleted it. Edit alerts compare the previous archived text with the version Telegram sends. Media files are not downloaded; this version archives text/captions and selected metadata.
+Telegram's deletion update contains chat/message identifiers, not the deleted message text or the identity of the person who deleted it. YashaAgent can display archived text for a deleted message only if it stored that message earlier; it cannot reliably say who deleted it. Edit alerts compare the previous archived text with the version Telegram sends. Supported attachments are downloaded when the Business message arrives, subject to Telegram Bot API availability, `MEDIA_MAX_FILE_MB`, and the per-owner `MEDIA_QUOTA_MB` limit. The default retention is `MEDIA_RETENTION_DAYS=365`; expired files are removed by a background cleanup task. Ensure `MEDIA_PATH` is on a persistent disk/volume and monitor available disk space.
 
 Before production, configure HTTPS, backups, access control and a retention policy. The Mini App is an MVP: test the full connection/reply flow with your own Business account before relying on it. Never commit real tokens or private message exports.

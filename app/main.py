@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import time
+from pathlib import Path
 
 import uvicorn
 from aiogram import Bot, Dispatcher
@@ -8,6 +10,35 @@ from app.config import Settings
 from app.db import ArchiveDB
 from app.handlers import setup_handlers
 from app.web import create_web_app
+
+
+async def media_retention_loop(db: ArchiveDB, media_root: str, retention_days: int) -> None:
+    root = Path(media_root).resolve()
+    while True:
+        cutoff = int(time.time()) - max(1, retention_days) * 86400
+        try:
+            expired = await db.expire_media_before(cutoff)
+            removed = 0
+            for item in expired:
+                raw_path = item.get("stored_path") or ""
+                if not raw_path:
+                    continue
+                path = Path(raw_path).resolve()
+                try:
+                    path.relative_to(root)
+                    path.unlink(missing_ok=True)
+                    await db.mark_media_expired(int(item["id"]))
+                    removed += 1
+                except ValueError:
+                    logging.getLogger(__name__).error("Refusing to remove media outside MEDIA_PATH: %s", path)
+                    await db.update_media_record(int(item["id"]), "", "failed", "Путь файла вне MEDIA_PATH")
+                except OSError as exc:
+                    logging.getLogger(__name__).warning("Could not remove expired media file %s: %s", path, exc)
+            if expired:
+                logging.getLogger(__name__).info("Media retention: expired=%s files_removed=%s", len(expired), removed)
+        except Exception:
+            logging.getLogger(__name__).exception("Media retention cleanup failed")
+        await asyncio.sleep(6 * 60 * 60)
 
 
 async def main() -> None:
@@ -23,7 +54,11 @@ async def main() -> None:
     dispatcher.include_router(setup_handlers(db, settings))
     web_app = create_web_app(db, bot, settings.bot_token, settings.admins, settings.media_path)
     web_app.state.ai_api_key = settings.ai_api_key
+    web_app.state.media_max_file_mb = max(1, settings.media_max_file_mb)
+    web_app.state.media_quota_mb = max(1, settings.media_quota_mb)
+    web_app.state.media_retention_days = max(1, settings.media_retention_days)
     web_app.state.ai_model = settings.ai_model
+    retention_task = asyncio.create_task(media_retention_loop(db, settings.media_path, settings.media_retention_days))
     web_server = uvicorn.Server(
         uvicorn.Config(
             web_app,
@@ -53,6 +88,8 @@ async def main() -> None:
     finally:
         web_server.should_exit = True
         await dispatcher.stop_polling()
+        retention_task.cancel()
+        await asyncio.gather(retention_task, return_exceptions=True)
         await bot.session.close()
 
 

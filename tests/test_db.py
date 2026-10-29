@@ -96,3 +96,35 @@ def test_edit_history_and_inbox_queries(tmp_path):
         assert await db.list_chats(42) == []
 
     asyncio.run(run())
+
+
+def test_media_gallery_usage_and_retention(tmp_path):
+    async def run():
+        db = ArchiveDB(str(tmp_path / "archive.sqlite3"))
+        await db.initialize()
+        await db.save_connection("bc-1", 42, True, True, 100)
+        connection = await db.get_connection("bc-1")
+        message = FakeMessage()
+        media = {
+            "file_id": "file-id",
+            "file_unique_id": "unique-id",
+            "media_type": "photo",
+            "file_name": "photo.jpg",
+            "mime_type": "image/jpeg",
+            "file_size": 512,
+        }
+        media_id = await db.save_media_record(connection, message, media)
+        stored = tmp_path / "photo.jpg"
+        stored.write_bytes(b"x" * 512)
+        await db.update_media_record(media_id, str(stored), "stored", "", 512)
+        gallery = await db.list_media(42, "photo")
+        assert len(gallery) == 1
+        assert gallery[0]["id"] == media_id
+        assert gallery[0]["status"] == "stored"
+        assert await db.media_usage_for_owner(42) == 512
+        expired = await db.expire_media_before(9_999_999_999)
+        assert expired == [{"id": media_id, "stored_path": str(stored)}]
+        await db.mark_media_expired(media_id)
+        assert (await db.list_media(42, "all"))[0]["status"] == "expired"
+        assert await db.media_usage_for_owner(42) == 0
+    asyncio.run(run())
