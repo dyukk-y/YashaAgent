@@ -2,8 +2,6 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 
 from app.config import Settings
 from app.db import ArchiveDB
@@ -16,7 +14,7 @@ async def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     db = ArchiveDB(settings.database_path)
     await db.initialize()
-    bot = Bot(token=settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    bot = Bot(token=settings.bot_token)
     dispatcher = Dispatcher()
     dispatcher.include_router(setup_handlers(db, settings))
     try:
