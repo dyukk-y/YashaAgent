@@ -286,6 +286,9 @@ body{background:var(--bg);color:var(--fg)}
   .media-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
 }
 @media(hover:none){.chat-row:hover,.event-card:hover{transform:none}.tab,.media-filters button,.media-card-actions button,.back,.history-btn{touch-action:manipulation}}
+
+/* Mobile-first usability */
+@media(max-width:619px){.app{padding:8px 10px 18px!important}.tabs{display:flex;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;position:sticky;top:0;z-index:20;background:#050505!important}.tabs::-webkit-scrollbar{display:none}.tab{flex:0 0 auto;min-height:42px;white-space:nowrap}.search input{min-height:44px!important;font-size:16px!important}.media-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:7px!important}.media-card{padding:7px!important}.media-card-actions{display:grid!important;grid-template-columns:1fr!important}.media-card-actions button{min-height:42px!important}.event-card{padding:12px!important}.event-body,.event-diff div{display:block!important;max-height:9em;overflow:auto!important;-webkit-line-clamp:unset!important}}
 </style>
 </head>
 <body>
