@@ -23,6 +23,11 @@ class ArchiveDB:
                     can_reply INTEGER NOT NULL DEFAULT 0,
                     updated_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS admin_user_registry (
+                    owner_user_id INTEGER PRIMARY KEY,
+                    owner_username TEXT NOT NULL DEFAULT '',
+                    first_seen INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS owner_settings (
                     owner_user_id INTEGER PRIMARY KEY,
                     archive_enabled INTEGER NOT NULL DEFAULT 1,
@@ -122,7 +127,45 @@ class ArchiveDB:
             media_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(archived_media)")).fetchall()}
             if "media_group_id" not in media_columns:
                 await db.execute("ALTER TABLE archived_media ADD COLUMN media_group_id TEXT NOT NULL DEFAULT ''")
+            await db.execute("""INSERT OR IGNORE INTO admin_user_registry(owner_user_id, owner_username, first_seen)
+                SELECT owner_user_id, MAX(owner_username), MIN(updated_at) FROM business_connections GROUP BY owner_user_id""")
             await db.commit()
+
+    async def admin_stats(self) -> dict[str, int]:
+        async with aiosqlite.connect(self.path) as db:
+            stats = {}
+            queries = {
+                "users": "SELECT COUNT(*) FROM admin_user_registry",
+                "connected": "SELECT COUNT(DISTINCT owner_user_id) FROM business_connections WHERE is_enabled=1",
+                "chats": "SELECT COUNT(*) FROM (SELECT owner_user_id,chat_id FROM archived_messages UNION SELECT owner_user_id,chat_id FROM message_buffer)",
+                "messages": "SELECT COUNT(*) FROM archived_messages",
+                "deleted": "SELECT COUNT(*) FROM deleted_message_events",
+                "edits": "SELECT COUNT(*) FROM archived_message_edits",
+                "media": "SELECT COUNT(*) FROM archived_media",
+                "new_users_7d": "SELECT COUNT(*) FROM admin_user_registry WHERE first_seen >= strftime('%s','now') - 604800",
+            }
+            for key, query in queries.items():
+                stats[key] = int((await (await db.execute(query)).fetchone())[0] or 0)
+            return stats
+
+    async def admin_users(self, limit: int = 15, offset: int = 0) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute("""
+                SELECT u.owner_user_id, u.owner_username, u.first_seen,
+                    MAX(COALESCE(c.is_enabled,0)) AS connected,
+                    COUNT(DISTINCT c.connection_id) AS connections,
+                    (SELECT COUNT(DISTINCT a.chat_id) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS chats,
+                    (SELECT COUNT(*) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS messages
+                FROM admin_user_registry u LEFT JOIN business_connections c ON c.owner_user_id=u.owner_user_id
+                GROUP BY u.owner_user_id, u.owner_username, u.first_seen
+                ORDER BY u.first_seen DESC LIMIT ? OFFSET ?
+            """, (limit, offset))
+            return [dict(row) for row in await cur.fetchall()]
+
+    async def admin_user_count(self) -> int:
+        async with aiosqlite.connect(self.path) as db:
+            return int((await (await db.execute("SELECT COUNT(*) FROM admin_user_registry")).fetchone())[0] or 0)
 
     async def owner_connections(self, owner_id: int) -> list[dict[str, Any]]:
         async with aiosqlite.connect(self.path) as db:
@@ -147,6 +190,9 @@ class ArchiveDB:
                 owner_username=excluded.owner_username, is_enabled=excluded.is_enabled, can_read_messages=excluded.can_read_messages, can_reply=excluded.can_reply, updated_at=excluded.updated_at""",
                 (connection_id, owner_id, owner_username.lstrip("@").lower(), int(enabled), int(can_read), int(can_reply), updated_at))
             await db.execute("INSERT OR IGNORE INTO owner_settings(owner_user_id, archive_enabled, notifications_enabled) VALUES(?,1,1)", (owner_id,))
+            await db.execute("""INSERT INTO admin_user_registry(owner_user_id, owner_username, first_seen) VALUES(?,?,?)
+                ON CONFLICT(owner_user_id) DO UPDATE SET owner_username=CASE WHEN excluded.owner_username!='' THEN excluded.owner_username ELSE admin_user_registry.owner_username END""",
+                (owner_id, owner_username.lstrip("@").lower(), updated_at))
             await db.commit()
 
     async def find_owner_by_username(self, username: str) -> dict[str, Any] | None:
