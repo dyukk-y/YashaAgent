@@ -27,8 +27,12 @@ async def media_retention_loop(db: ArchiveDB, media_root: str, retention_days: i
                 try:
                     path.relative_to(root)
                     path.unlink(missing_ok=True)
+                    await db.mark_media_expired(int(item["id"]))
                     removed += 1
-                except (ValueError, OSError) as exc:
+                except ValueError:
+                    logging.getLogger(__name__).error("Refusing to remove media outside MEDIA_PATH: %s", path)
+                    await db.update_media_record(int(item["id"]), "", "failed", "Путь файла вне MEDIA_PATH")
+                except OSError as exc:
                     logging.getLogger(__name__).warning("Could not remove expired media file %s: %s", path, exc)
             if expired:
                 logging.getLogger(__name__).info("Media retention: expired=%s files_removed=%s", len(expired), removed)
