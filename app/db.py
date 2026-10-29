@@ -163,6 +163,22 @@ class ArchiveDB:
             """, (limit, offset))
             return [dict(row) for row in await cur.fetchall()]
 
+    async def admin_new_users(self, limit: int = 10, offset: int = 0) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute("""
+                SELECT u.owner_user_id, u.owner_username, u.first_seen,
+                    MAX(COALESCE(c.is_enabled,0)) AS connected,
+                    COUNT(DISTINCT c.connection_id) AS connections,
+                    (SELECT COUNT(DISTINCT a.chat_id) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS chats,
+                    (SELECT COUNT(*) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS messages
+                FROM admin_user_registry u LEFT JOIN business_connections c ON c.owner_user_id=u.owner_user_id
+                WHERE u.first_seen >= strftime('%s','now') - 604800
+                GROUP BY u.owner_user_id, u.owner_username, u.first_seen
+                ORDER BY u.first_seen DESC LIMIT ? OFFSET ?
+            """, (limit, offset))
+            return [dict(row) for row in await cur.fetchall()]
+
     async def admin_user_count(self) -> int:
         async with aiosqlite.connect(self.path) as db:
             return int((await (await db.execute("SELECT COUNT(*) FROM admin_user_registry")).fetchone())[0] or 0)
