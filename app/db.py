@@ -246,6 +246,7 @@ class ArchiveDB:
         async with aiosqlite.connect(self.path) as db:
             cur = await db.execute("SELECT COUNT(*) FROM archived_messages WHERE owner_user_id=?", (owner_id,))
             count = int((await cur.fetchone())[0])
+            await db.execute("DELETE FROM archived_message_edits WHERE owner_user_id=?", (owner_id,))
             await db.execute("DELETE FROM archived_messages WHERE owner_user_id=?", (owner_id,))
             await db.commit()
             return count
