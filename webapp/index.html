@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#101820"><title>YashaAgent</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Onest:wght@400;500;600;700&family=Unbounded:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+<meta name="color-scheme" content="light dark">
 <script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>:root{color-scheme:light dark;--bg:#fff;--fg:#000;--mute:#666;--line:#d9d9d9;--card:#f2f2f2;--ibg:#000;--ifg:#fff;--danger:#c92e45;--violet:#5f46a5;--blue:#315ca8;color:var(--fg);background:var(--bg)}
 @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#000;--fg:#fff;--mute:#8d8d8d;--line:#2a2a2a;--card:#111;--ibg:#fff;--ifg:#000;--danger:#ff647d;--violet:#c4b2ff;--blue:#9dbdff;color-scheme:dark}}
@@ -426,11 +426,42 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px soli
  .media-card{padding:9px!important}
 }
 
-.event-diff del{color:#ff9caf;text-decoration:line-through;text-decoration-thickness:1.5px}.event-diff strong{font-weight:800;color:#8ce8c8}</style>
+.event-diff del{color:#ff9caf;text-decoration:line-through;text-decoration-thickness:1.5px}.event-diff strong{font-weight:800;color:#8ce8c8}
+/* Clean monochrome interface refresh */
+:root{color-scheme:light dark;--bg:#fff;--fg:#111;--mute:#737373;--line:#e5e5e5;--card:#f7f7f7;--ibg:#111;--ifg:#fff;--danger:#b42336;--violet:#444;--blue:#222;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0b0b;--fg:#f5f5f5;--mute:#a1a1a1;--line:#292929;--card:#151515;--ibg:#f5f5f5;--ifg:#111;--danger:#ff7885;--violet:#c9c9c9;--blue:#eee}}
+:root[data-theme="light"]{--bg:#fff;--fg:#111;--mute:#737373;--line:#e5e5e5;--card:#f7f7f7;--ibg:#111;--ifg:#fff;--danger:#b42336;--violet:#444;--blue:#222}
+:root[data-theme="dark"]{--bg:#0b0b0b;--fg:#f5f5f5;--mute:#a1a1a1;--line:#292929;--card:#151515;--ibg:#f5f5f5;--ifg:#111;--danger:#ff7885;--violet:#c9c9c9;--blue:#eee}
+body,button,input,textarea,select{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif!important}
+h1,h2,h3,.brand h1,.chat-title,.person,.welcome-panel h2,.media-card-title,.setting-card b{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif!important;letter-spacing:-.025em}
+.top{border-bottom:1px solid var(--line);backdrop-filter:blur(18px);background:color-mix(in srgb,var(--bg) 92%,transparent)}
+.brand{gap:11px}.brand .logo{display:block;width:46px;height:46px;object-fit:cover;flex:none;border:1px solid var(--line)!important;border-radius:14px!important;background:#fff!important;box-shadow:none!important;padding:0}
+.brand h1{font-size:18px;font-weight:750;letter-spacing:-.04em;color:var(--fg)}
+.sub{font-size:12px;color:var(--mute)}
+.status{border:1px solid var(--line);border-radius:99px;font:600 10px/1.4 Inter,-apple-system,sans-serif;color:var(--mute);padding:6px 9px}
+.search input{border:1px solid var(--line);border-radius:14px;box-shadow:none!important}.search input:focus{border-color:var(--fg);box-shadow:0 0 0 3px color-mix(in srgb,var(--fg) 9%,transparent)!important}
+.tabs{gap:7px}.tab{border:1px solid var(--line);border-radius:11px;font-size:13px;font-weight:600}.tab:hover,.tab.active{background:var(--fg);border-color:var(--fg);color:var(--bg)}
+.layout{border-top:1px solid var(--line)}.chat-item{border-radius:14px;border-bottom:1px solid var(--line);padding:14px 10px}.chat-item.selected{background:var(--card);border-color:var(--line);box-shadow:inset 3px 0 0 var(--fg)}.avatar{background:var(--fg)!important;color:var(--bg)!important;border:1px solid var(--line);border-radius:14px!important;font-family:Inter,-apple-system,sans-serif!important;font-weight:700}
+.pill{border-color:var(--line);color:var(--fg);border-radius:7px}.pill.edit{border-color:var(--line);color:var(--fg)}
+.backbar{border-bottom:1px solid var(--line)}.back{border:1px solid var(--line);border-radius:11px}.messages{gap:11px}.bubble{border:1px solid var(--line);border-radius:16px 16px 16px 5px;background:var(--card)}.bubble.mine{background:var(--fg);color:var(--bg);border-color:var(--fg)}.bubble.edited{border-color:#888}.bubble.deleted{border-color:var(--danger)}
+.composer{border-top:1px solid var(--line)}.composer textarea{border:1px solid var(--line);border-radius:14px}.send{border:1px solid var(--fg);border-radius:14px;background:var(--fg);color:var(--bg)}
+.welcome-orb{width:66px;height:66px;border:1px solid var(--line);border-radius:18px;background:var(--fg);color:var(--bg);box-shadow:none;font:800 28px Inter,-apple-system,sans-serif}.welcome-panel h2{font-size:clamp(23px,3vw,30px);font-weight:750}
+.welcome-features>div{border:1px solid var(--line)!important;border-radius:14px!important;background:var(--card)!important}.welcome-features span{color:var(--fg)!important}
+.media-stat,.media-toolbar,.media-card,.media-cover,.media-album-label{background:var(--card)!important;border-color:var(--line)!important;color:var(--fg)!important;box-shadow:none!important}
+.media-stat strong,.media-toolbar-title strong,.media-card-title{color:var(--fg)!important;font-family:Inter,-apple-system,sans-serif!important}
+.media-stat span,.media-toolbar-title span,.media-card-meta,.media-notice,.media-album-label span{color:var(--mute)!important}
+.media-filter-select{background:var(--bg)!important;color:var(--fg)!important;border-color:var(--line)!important;border-radius:10px;font-family:Inter,-apple-system,sans-serif!important}
+.media-toolbar{border-radius:14px}.media-cover{color:var(--fg)!important}.media-cover[data-gallery-type="video_note"]{background:#e9e9e9!important;color:#111!important}.media-cover[data-gallery-type="video_note"]:after{background:#111!important;color:#fff!important}
+.media-card-actions button,.media-more{background:var(--bg)!important;color:var(--fg)!important;border:1px solid var(--line)!important;border-radius:10px;font-family:Inter,-apple-system,sans-serif!important}.media-status{background:#eaeaea!important;color:#222!important}.media-status.bad{background:#fbe8eb!important;color:#8d1527!important}
+.event-diff{background:var(--card)!important;border-color:var(--line)!important}.event-diff .diff-before{color:var(--danger)!important}.event-diff .diff-after{color:var(--fg)!important}.event-type.deleted,.event-type.edited{color:var(--fg)!important;background:var(--card)!important}
+.notice{border-top:1px solid var(--line);font:400 11px/1.5 Inter,-apple-system,sans-serif}
+button{transition:background-color .15s,border-color .15s,transform .15s}
+@media(max-width:619px){.brand .logo{width:42px;height:42px}.brand h1{font-size:17px}.status{padding:5px 7px}.tab{padding:9px 12px}.app{padding-left:14px;padding-right:14px}}
+</style>
 </head>
 <body>
 <div class="app">
-<header class="top"><div class="brand"><div class="logo">Y</div><div><h1>YashaAgent</h1><div class="sub" id="archiveSub">Ваш архив переписки</div></div><div class="status" id="connectionStatus" title="Проверка Business-подключения">● проверка</div></div>
+<header class="top"><div class="brand"><img class="logo" src="yasha-logo.svg" alt="YashaAgent" /><div><h1>YashaAgent</h1><div class="sub" id="archiveSub">Ваш архив переписки</div></div><div class="status" id="connectionStatus" title="Проверка Business-подключения">● проверка</div></div>
 <div class="search"><input id="search" type="search" placeholder="Поиск по сообщениям…" autocomplete="off"></div></header>
 <nav class="tabs" id="tabs"><button class="tab active" data-filter="all">Все чаты</button><button class="tab" data-filter="deleted">Удалённые</button><button class="tab" data-filter="edited">Изменённые</button><button class="tab" data-filter="media">Медиа</button><button class="tab" data-filter="settings">Настройки</button></nav>
 
