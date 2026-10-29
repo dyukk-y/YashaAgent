@@ -380,8 +380,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         import difflib
         def html_escape(value: str) -> str:
             return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        old_words = re.findall(r"\\S+\\s*", old_text)
-        new_words = re.findall(r"\\S+\\s*", new_text)
+        old_words = re.findall(r"\S+\s*", old_text)
+        new_words = re.findall(r"\S+\s*", new_text)
         matcher = difflib.SequenceMatcher(a=old_words, b=new_words, autojunk=False)
         diff_parts = []
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
@@ -396,7 +396,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         try:
             await message.bot.send_message(
                 owner_id,
-                f"✏️ Изменено сообщение · {html_escape(chat_name)}\\nАвтор: {html_escape(name)}\\n\\n{diff_text}",
+                f"✏️ Изменено сообщение · {html_escape(chat_name)}\nАвтор: {html_escape(name)}\n\n{diff_text}",
                 parse_mode="HTML",
                 reply_markup=app_markup("Посмотреть изменённые", view="edited", chat_id=message.chat.id, message_id=message.message_id),
             )
