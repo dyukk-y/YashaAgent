@@ -72,6 +72,22 @@ class ArchiveDB:
                 await db.execute("ALTER TABLE notification_settings ADD COLUMN interval_seconds INTEGER NOT NULL DEFAULT 60")
             await db.commit()
 
+    async def owner_connections(self, owner_id: int) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                "SELECT is_enabled, can_read_messages, can_reply, updated_at FROM business_connections WHERE owner_user_id=? ORDER BY updated_at DESC",
+                (owner_id,),
+            )
+            return [dict(row) for row in await cur.fetchall()]
+
+    async def owner_settings(self, owner_id: int) -> dict[str, Any]:
+        return {
+            "archive_enabled": await self.owner_archive_enabled(owner_id),
+            "notifications_enabled": await self.notifications_enabled(owner_id),
+            "interval_seconds": await self.notification_interval(owner_id),
+        }
+
     async def save_connection(self, connection_id: str, owner_id: int, enabled: bool, can_read: bool, updated_at: int, can_reply: bool = False) -> None:
         async with aiosqlite.connect(self.path) as db:
             await db.execute("""INSERT INTO business_connections(connection_id, owner_user_id, is_enabled, can_read_messages, can_reply, updated_at)
