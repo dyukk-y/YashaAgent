@@ -228,7 +228,7 @@ class ArchiveDB:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
             sql = """SELECT a.message_id,a.chat_id,a.date_ts,a.sender_user_id,a.owner_user_id,a.sender_name,a.text,a.is_deleted,
-                     a.chat_title,
+                     a.chat_title, a.raw_json,
                      EXISTS(SELECT 1 FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id AND e.message_id=a.message_id) AS edited,
                      (SELECT e.old_text FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id AND e.message_id=a.message_id ORDER BY e.edited_at DESC LIMIT 1) AS previous_text
                      FROM archived_messages a WHERE a.owner_user_id=? AND a.chat_id=?"""
