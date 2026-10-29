@@ -17,6 +17,7 @@ class ArchiveDB:
                 CREATE TABLE IF NOT EXISTS business_connections (
                     connection_id TEXT PRIMARY KEY,
                     owner_user_id INTEGER NOT NULL,
+                    owner_username TEXT NOT NULL DEFAULT '',
                     is_enabled INTEGER NOT NULL DEFAULT 0,
                     can_read_messages INTEGER NOT NULL DEFAULT 0,
                     can_reply INTEGER NOT NULL DEFAULT 0,
@@ -107,6 +108,8 @@ class ArchiveDB:
             conn_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(business_connections)")).fetchall()}
             if "can_reply" not in conn_columns:
                 await db.execute("ALTER TABLE business_connections ADD COLUMN can_reply INTEGER NOT NULL DEFAULT 0")
+            if "owner_username" not in conn_columns:
+                await db.execute("ALTER TABLE business_connections ADD COLUMN owner_username TEXT NOT NULL DEFAULT ''")
             archive_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(archived_messages)")).fetchall()}
             if "chat_title" not in archive_columns:
                 await db.execute("ALTER TABLE archived_messages ADD COLUMN chat_title TEXT NOT NULL DEFAULT ''")
@@ -137,14 +140,36 @@ class ArchiveDB:
             "interval_seconds": await self.notification_interval(owner_id),
         }
 
-    async def save_connection(self, connection_id: str, owner_id: int, enabled: bool, can_read: bool, updated_at: int, can_reply: bool = False) -> None:
+    async def save_connection(self, connection_id: str, owner_id: int, enabled: bool, can_read: bool, updated_at: int, can_reply: bool = False, owner_username: str = "") -> None:
         async with aiosqlite.connect(self.path) as db:
-            await db.execute("""INSERT INTO business_connections(connection_id, owner_user_id, is_enabled, can_read_messages, can_reply, updated_at)
-                VALUES(?,?,?,?,?,?) ON CONFLICT(connection_id) DO UPDATE SET owner_user_id=excluded.owner_user_id,
-                is_enabled=excluded.is_enabled, can_read_messages=excluded.can_read_messages, can_reply=excluded.can_reply, updated_at=excluded.updated_at""",
-                (connection_id, owner_id, int(enabled), int(can_read), int(can_reply), updated_at))
+            await db.execute("""INSERT INTO business_connections(connection_id, owner_user_id, owner_username, is_enabled, can_read_messages, can_reply, updated_at)
+                VALUES(?,?,?,?,?,?,?) ON CONFLICT(connection_id) DO UPDATE SET owner_user_id=excluded.owner_user_id,
+                owner_username=excluded.owner_username, is_enabled=excluded.is_enabled, can_read_messages=excluded.can_read_messages, can_reply=excluded.can_reply, updated_at=excluded.updated_at""",
+                (connection_id, owner_id, owner_username.lstrip("@").lower(), int(enabled), int(can_read), int(can_reply), updated_at))
             await db.execute("INSERT OR IGNORE INTO owner_settings(owner_user_id, archive_enabled, notifications_enabled) VALUES(?,1,1)", (owner_id,))
             await db.commit()
+
+    async def find_owner_by_username(self, username: str) -> dict[str, Any] | None:
+        username = username.strip().lstrip("@").lower()
+        if not username:
+            return None
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            row = await (await db.execute(
+                """SELECT owner_user_id, owner_username, MAX(is_enabled) AS connected,
+                          COUNT(DISTINCT connection_id) AS connections
+                   FROM business_connections WHERE lower(owner_username)=?
+                   GROUP BY owner_user_id, owner_username ORDER BY connected DESC LIMIT 1""",
+                (username,),
+            )).fetchone()
+            if not row:
+                return None
+            result = dict(row)
+            result["chat_count"] = int((await (await db.execute(
+                "SELECT COUNT(DISTINCT chat_id) FROM archived_messages WHERE owner_user_id=?",
+                (result["owner_user_id"],),
+            )).fetchone())[0] or 0)
+            return result
 
     async def get_connection(self, connection_id: str) -> dict[str, Any] | None:
         async with aiosqlite.connect(self.path) as db:
