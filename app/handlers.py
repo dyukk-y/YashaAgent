@@ -23,6 +23,7 @@ BTN_SEARCH = "🔎 Поиск"
 BTN_STATS = "📊 Статистика"
 BTN_SUMMARY = "🧠 Сводка"
 BTN_NOTIFICATIONS = "🔔 Уведомления"
+BTN_INTERVAL = "⏱ Интервал сводки"
 BTN_PAUSE = "⏸ Пауза архива"
 BTN_RESUME = "▶️ Продолжить архив"
 BTN_FORGET = "🗑 Очистить архив"
@@ -31,7 +32,7 @@ MENU = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text=BTN_ARCHIVE), KeyboardButton(text=BTN_SEARCH)],
         [KeyboardButton(text=BTN_STATS), KeyboardButton(text=BTN_SUMMARY)],
-        [KeyboardButton(text=BTN_NOTIFICATIONS)],
+        [KeyboardButton(text=BTN_NOTIFICATIONS), KeyboardButton(text=BTN_INTERVAL)],
         [KeyboardButton(text=BTN_PAUSE), KeyboardButton(text=BTN_RESUME)],
         [KeyboardButton(text=BTN_FORGET)],
     ],
@@ -103,7 +104,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
 
     @router.message(SearchFlow.waiting_for_query, F.text)
     async def search_query(message: Message, state: FSMContext) -> None:
-        if message.text in {BTN_ARCHIVE, BTN_SEARCH, BTN_STATS, BTN_SUMMARY, BTN_NOTIFICATIONS, BTN_PAUSE, BTN_RESUME, BTN_FORGET}:
+        if message.text in {BTN_ARCHIVE, BTN_SEARCH, BTN_STATS, BTN_SUMMARY, BTN_NOTIFICATIONS, BTN_INTERVAL, BTN_PAUSE, BTN_RESUME, BTN_FORGET}:
             await state.clear()
             await message.answer("Поиск отменён.", reply_markup=MENU)
             return
@@ -151,6 +152,20 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         status = "включены ✅" if new_value else "выключены 🔕"
         detail = "Входящие сообщения будут собираться в групповые уведомления примерно раз в минуту." if new_value else "Архив продолжит сохранять доступные сообщения; уведомления отключены."
         await message.answer(f"🔔 Уведомления {status}.\n{detail}", reply_markup=MENU)
+
+    @router.message(F.text == BTN_INTERVAL)
+    async def interval_handler(message: Message) -> None:
+        owner_id = message.from_user.id
+        current = await db.notification_interval(owner_id)
+        choices = [30, 60, 300, 900]
+        next_interval = choices[(choices.index(current) + 1) % len(choices)]
+        await db.set_notification_interval(owner_id, next_interval)
+        labels = {30: "30 секунд", 60: "1 минута", 300: "5 минут", 900: "15 минут"}
+        await message.answer(
+            f"⏱ Интервал группировки: <b>{labels[next_interval]}</b>.\n"
+            "Нажми кнопку ещё раз, чтобы выбрать следующий интервал.",
+            reply_markup=MENU, parse_mode="HTML",
+        )
 
     @router.message(F.text == BTN_PAUSE)
     async def pause_archive(message: Message) -> None:
