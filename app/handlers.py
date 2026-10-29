@@ -190,8 +190,11 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             return
         owner_id = connection["owner_user_id"]
         if await db.owner_archive_enabled(owner_id):
-            await db.save_message(connection, message)
-            await archive_media(message, connection, owner_id)
+            if notify:
+                await db.buffer_message(connection, message)
+            else:
+                await db.save_message(connection, message)
+                await archive_media(message, connection, owner_id)
             log.info(
                 "Archived business message owner=%s chat=%s message=%s",
                 owner_id, message.chat.id, message.message_id,
@@ -223,6 +226,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             return
         owner_id = connection["owner_user_id"]
         previous = await db.get_archived_message(connection_id, message.chat.id, message.message_id)
+        await db.promote_buffered_messages(connection_id, message.chat.id, [message.message_id], owner_id)
         await archive_business_message(message, notify=False)
         if not await db.notifications_enabled(owner_id):
             return
@@ -250,6 +254,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         owner_id = connection["owner_user_id"]
         chat_title = getattr(event.chat, "title", None) or getattr(event.chat, "first_name", None) or getattr(event.chat, "username", None) or "Личный чат"
         deleted_rows = await db.get_archived_messages(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
+        await db.promote_buffered_messages(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
         await db.record_deletion_events(event.business_connection_id, event.chat.id, event.message_ids, owner_id, chat_title)
         await db.mark_deleted(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
         log.info(
