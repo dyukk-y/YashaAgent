@@ -192,6 +192,19 @@ class ArchiveDB:
             )
             return [dict(row) for row in await cur.fetchall()]
 
+    async def edit_history(self, owner_id: int, chat_id: int, message_id: int) -> list[dict[str, Any]]:
+        """Return every stored revision of one archived message, oldest first."""
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT old_text, new_text, edited_at
+                   FROM archived_message_edits
+                   WHERE owner_user_id=? AND chat_id=? AND message_id=?
+                   ORDER BY edited_at ASC, id ASC""",
+                (owner_id, chat_id, message_id),
+            )
+            return [dict(row) for row in await cur.fetchall()]
+
     async def owner_has_chat(self, owner_id: int, chat_id: int) -> bool:
         async with aiosqlite.connect(self.path) as db:
             row = await (await db.execute("SELECT 1 FROM archived_messages WHERE owner_user_id=? AND chat_id=? LIMIT 1", (owner_id, chat_id))).fetchone()
