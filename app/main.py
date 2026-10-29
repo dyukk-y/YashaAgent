@@ -87,7 +87,13 @@ async def main() -> None:
         )
     finally:
         web_server.should_exit = True
-        await dispatcher.stop_polling()
+        # SIGTERM may stop polling before this cleanup block runs.
+        # aiogram raises RuntimeError if stop_polling is called twice.
+        if dispatcher._polling:
+            try:
+                await dispatcher.stop_polling()
+            except RuntimeError:
+                logging.getLogger(__name__).debug("Polling already stopped during shutdown")
         retention_task.cancel()
         await asyncio.gather(retention_task, return_exceptions=True)
         await bot.session.close()
