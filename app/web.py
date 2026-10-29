@@ -40,11 +40,12 @@ def verify_init_data(init_data: str, bot_token: str, max_age: int = 86400) -> di
     return {"id": user_id, "first_name": user.get("first_name", ""), "username": user.get("username", "")}
 
 
-def create_web_app(db: ArchiveDB, bot, bot_token: str) -> FastAPI:
+def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | None = None) -> FastAPI:
     api = FastAPI(title="YashaAgent", docs_url=None, redoc_url=None)
     api.state.archive_db = db
     api.state.telegram_bot = bot
     api.state.bot_token = bot_token
+    api.state.admin_ids = set(admin_ids or set())
     api.state.ai_api_key = ""
     api.state.ai_model = "gpt-4.1-mini"
 
@@ -63,7 +64,39 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str) -> FastAPI:
     @api.get("/api/me")
     async def me(request: Request):
         user = await owner_for(request)
-        return {"user": user}
+        return {"user": user, "is_admin": user["id"] in request.app.state.admin_ids}
+
+    async def require_admin(request: Request) -> dict:
+        user = await owner_for(request)
+        if user["id"] not in request.app.state.admin_ids:
+            raise HTTPException(status_code=403, detail="Доступ только для главного администратора")
+        return user
+
+    @api.get("/api/admin/chats")
+    async def admin_chats(request: Request):
+        await require_admin(request)
+        return {"chats": await db.list_chats_admin()}
+
+    @api.get("/api/admin/chats/{owner_id}/{chat_id}/messages")
+    async def admin_chat_messages(owner_id: int, chat_id: int, request: Request, limit: int = 100, before: int | None = None):
+        await require_admin(request)
+        if not await db.owner_has_chat(owner_id, chat_id):
+            raise HTTPException(status_code=404, detail="Чат не найден в архиве")
+        return {"messages": await db.chat_messages(owner_id, chat_id, min(max(limit, 1), 200), before)}
+
+    @api.post("/api/chats/{chat_id}/hide")
+    async def hide_chat(chat_id: int, request: Request):
+        user = await owner_for(request)
+        if not await db.owner_has_chat(user["id"], chat_id):
+            raise HTTPException(status_code=404, detail="Чат не найден в вашем архиве")
+        await db.hide_chat(user["id"], chat_id)
+        return {"ok": True}
+
+    @api.post("/api/chats/{chat_id}/unhide")
+    async def unhide_chat(chat_id: int, request: Request):
+        user = await owner_for(request)
+        await db.unhide_chat(user["id"], chat_id)
+        return {"ok": True}
 
     @api.get("/api/chats")
     async def chats(request: Request):
