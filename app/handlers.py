@@ -131,9 +131,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             section = action[1] if len(action) > 1 else "stats"
             offset = max(0, int(action[2])) if len(action) > 2 else 0
             if section in {"users", "new"}:
-                users = await db.admin_users(limit=10, offset=offset)
-                if section == "new":
-                    users = [u for u in users if int(u.get("first_seen") or 0) >= int(__import__("time").time()) - 604800]
+                users = await (db.admin_new_users(limit=10, offset=offset) if section == "new" else db.admin_users(limit=10, offset=offset))
                 if not users:
                     text = "Пользователей в этом разделе пока нет."
                 else:
