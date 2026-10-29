@@ -206,10 +206,10 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
                 ],
                 max_tokens=500,
             )
-            await status.edit_text((response.choices[0].message.content or "Не удалось сформировать сводку.")[:3900], reply_markup=MENU)
+            await status.edit_text((response.choices[0].message.content or "Не удалось сформировать сводку.")[:3900])
         except Exception:
             log.exception("AI summary request failed")
-            await status.edit_text("Не удалось создать сводку. Проверь настройки AI и журнал приложения.", reply_markup=MENU)
+            await status.edit_text("Не удалось создать сводку. Проверь настройки AI и журнал приложения.")
 
     @router.business_connection()
     async def business_connection_handler(connection: BusinessConnection) -> None:
@@ -227,9 +227,9 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if not connection or not connection["is_enabled"] or not connection["can_read_messages"]:
             return
         owner_id = connection["owner_user_id"]
-        if not await db.owner_archive_enabled(owner_id):
-            return
-        await db.save_message(connection, message)
+        if await db.owner_archive_enabled(owner_id):
+            await db.save_message(connection, message)
+        # Notifications are independent from archive retention: pausing storage does not silence alerts.
         await queue_notification(message, owner_id)
 
     @router.business_message()
