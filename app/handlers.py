@@ -227,7 +227,10 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         owner_id = connection["owner_user_id"]
         previous = await db.get_archived_message(connection_id, message.chat.id, message.message_id)
         await db.promote_buffered_messages(connection_id, message.chat.id, [message.message_id], owner_id)
-        await archive_business_message(message, notify=False)
+        # Edits are the archive's primary event: persist them even if ordinary
+        # message buffering has been paused in owner settings.
+        await db.save_message(connection, message)
+        await archive_media(message, connection, owner_id)
         if not await db.notifications_enabled(owner_id):
             return
         sender = message.from_user
