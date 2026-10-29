@@ -1,18 +1,13 @@
 import asyncio
-import html
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
 
-from aiogram import F, Router
+from aiogram import Router
 from aiogram.filters import CommandStart
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
-    BusinessConnection, BusinessMessagesDeleted, CallbackQuery, InlineKeyboardButton,
-    InlineKeyboardMarkup, KeyboardButton, Message, ReplyKeyboardMarkup, WebAppInfo,
+    BusinessConnection, BusinessMessagesDeleted, InlineKeyboardButton,
+    InlineKeyboardMarkup, Message, WebAppInfo,
 )
-from openai import AsyncOpenAI
 
 from app.config import Settings
 from app.db import ArchiveDB
@@ -69,8 +64,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             digest_tasks[owner_id] = asyncio.create_task(send_digest(message.bot, owner_id))
 
     @router.message(CommandStart())
-    async def start_handler(message: Message, state: FSMContext) -> None:
-        await state.clear()
+    async def start_handler(message: Message) -> None
         text = (
             "Привет! Я YashaAgent — архив и управление Telegram Business в одном приложении.\\n\\n"
             "Открой Mini App: там сообщения, поиск, история изменений и удалений, уведомления и все настройки.\\n\\n"
