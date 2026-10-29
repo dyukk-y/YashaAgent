@@ -157,7 +157,7 @@ const mediaLabels={all:'Все',photo:'Фото',video:'Видео',animation:'G
        else if(type==='voice'||type==='audio'){const audio=document.createElement('audio');audio.controls=true;audio.src=objectUrl;audio.style.width='100%';btn.replaceWith(audio)}
        else{const a=document.createElement('a');a.href=objectUrl;a.download=btn.dataset.galleryName||'attachment';a.click();btn.textContent='Скачано';setTimeout(()=>URL.revokeObjectURL(objectUrl),60000)}
      }catch(err){btn.innerHTML=old;tg?.showAlert?tg.showAlert(err.message):alert(err.message)}finally{btn.dataset.loading='0'}
-   }));
+    })});
    list.querySelectorAll('[data-gallery-chat]').forEach(btn=>{if(btn.dataset.bound==='1')return;btn.dataset.bound='1';btn.addEventListener('click',async()=>{const chat=Number(btn.dataset.galleryChat),owner=Number(btn.dataset.galleryOwner);if(adminMode)await openAdminChat(owner,chat);else await openChat(chat);const id=Number(btn.dataset.galleryMessage);setTimeout(()=>{const target=$('message-'+id);if(target){target.scrollIntoView({behavior:'smooth',block:'center'});target.classList.add('event-focus')}},80)})});
    if($('mediaMore'))$('mediaMore').onclick=()=>loadMedia(mediaKind,false);
  }
