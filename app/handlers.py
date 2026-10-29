@@ -364,16 +364,26 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         # Promote first so the original version is available for the edit diff.
         await db.promote_buffered_messages(connection_id, message.chat.id, [message.message_id], owner_id)
         previous = await db.get_archived_message(connection_id, message.chat.id, message.message_id)
-        # Edits are the archive's primary event: persist them even if ordinary
-        # message buffering has been paused in owner settings.
+        # Record the update directly from Telegram instead of relying on an
+        # upsert side effect. This guarantees the "Изменённые" feed gets an event.
+        old_text = (previous or {}).get("text", "") or ""
+        new_text = message.text or message.caption or ""
+        edit_value = getattr(message, "edit_date", None) or message.date
+        edited_at = int(edit_value.timestamp() if hasattr(edit_value, "timestamp") else edit_value)
+        await db.record_message_edit(
+            connection_id, owner_id, message.chat.id, message.message_id,
+            old_text, new_text, edited_at,
+        )
+        # Persist the current version even if ordinary archive storage is paused.
         await db.save_message(connection, message)
         await archive_media(message, connection, owner_id)
-        if not await db.notifications_enabled(owner_id):
+        if (not await db.notifications_enabled(owner_id)
+                or not await db.notification_type_enabled(owner_id, "edits")):
             return
         sender = message.from_user
         name = " ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else "Контакт"
-        old_text = (previous or {}).get("text", "") or "[текст не был сохранён]"
-        new_text = message.text or message.caption or "[сообщение без текста]"
+        old_text = old_text or "[исходный текст не был сохранён]"
+        new_text = new_text or "[сообщение без текста]"
         old_text = old_text[:1200]
         new_text = new_text[:1200]
         chat_name = getattr(message.chat, "title", None) or getattr(message.chat, "first_name", None) or "Личный чат"
