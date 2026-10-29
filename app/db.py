@@ -205,6 +205,39 @@ class ArchiveDB:
             )
             return [dict(row) for row in await cur.fetchall()]
 
+    async def list_events(self, owner_id: int | None, kind: str, limit: int = 100) -> list[dict[str, Any]]:
+        """List saved deletion events or every stored revision for the event feed."""
+        if kind not in {"deleted", "edited"}:
+            raise ValueError("Unsupported archive event kind")
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            if kind == "deleted":
+                sql = """SELECT a.owner_user_id, a.chat_id, a.message_id, a.date_ts AS event_ts,
+                                a.date_ts, a.sender_name, a.text, a.chat_title, a.raw_json,
+                                a.is_deleted, NULL AS old_text, NULL AS new_text
+                         FROM archived_messages a WHERE a.is_deleted=1"""
+                args: list[Any] = []
+                if owner_id is not None:
+                    sql += " AND a.owner_user_id=?"
+                    args.append(owner_id)
+                sql += " ORDER BY a.date_ts DESC LIMIT ?"
+                args.append(limit)
+            else:
+                sql = """SELECT e.owner_user_id, e.chat_id, e.message_id, e.edited_at AS event_ts,
+                                a.date_ts, a.sender_name, a.text, a.chat_title, a.raw_json,
+                                a.is_deleted, e.old_text, e.new_text
+                         FROM archived_message_edits e
+                         JOIN archived_messages a ON a.owner_user_id=e.owner_user_id
+                           AND a.chat_id=e.chat_id AND a.message_id=e.message_id"""
+                args = []
+                if owner_id is not None:
+                    sql += " WHERE e.owner_user_id=?"
+                    args.append(owner_id)
+                sql += " ORDER BY e.edited_at DESC, e.id DESC LIMIT ?"
+                args.append(limit)
+            cur = await db.execute(sql, args)
+            return [dict(row) for row in await cur.fetchall()]
+
     async def owner_has_chat(self, owner_id: int, chat_id: int) -> bool:
         async with aiosqlite.connect(self.path) as db:
             row = await (await db.execute("SELECT 1 FROM archived_messages WHERE owner_user_id=? AND chat_id=? LIMIT 1", (owner_id, chat_id))).fetchone()
