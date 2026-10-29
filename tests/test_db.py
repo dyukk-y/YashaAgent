@@ -124,6 +124,7 @@ def test_media_gallery_usage_and_retention(tmp_path):
         assert await db.media_usage_for_owner(42) == 512
         expired = await db.expire_media_before(9_999_999_999)
         assert expired == [{"id": media_id, "stored_path": str(stored)}]
+        await db.mark_media_expired(media_id)
         assert (await db.list_media(42, "all"))[0]["status"] == "expired"
         assert await db.media_usage_for_owner(42) == 0
     asyncio.run(run())
