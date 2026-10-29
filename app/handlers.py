@@ -98,9 +98,9 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         await state.clear()
         await message.answer(
             "Привет! Я YashaAgent. Здесь всё управляется кнопками. 🗂\n\n"
-            "Я сохраняю только те сообщения, которые Telegram передаёт через подключённый "
-            "владельцем Telegram Business аккаунт с разрешением на чтение. Новые входящие "
-            "сообщения собираю в одну сводку примерно раз в минуту, чтобы не засыпать уведомлениями.\n\n"
+            "Я сохраняю сообщения из подключённого вами Telegram Business аккаунта. "
+            "Изменения и удаления, которые Telegram передаст боту, отмечаются в архиве и присылаются сразу. "
+            "Новые входящие сообщения можно просматривать в приложении.\n\n"
             "Подключи бота в настройках Telegram Business и выдай необходимые права. "
             "Для первой настройки нужен /start; дальше используй меню ниже.",
             reply_markup=menu,
@@ -245,7 +245,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             enabled=connection.is_enabled, can_read=can_read, can_reply=can_reply, updated_at=int(connection.date.timestamp()))
         log.info("Business connection updated: owner=%s enabled=%s can_read=%s can_reply=%s", connection.user.id, connection.is_enabled, can_read, can_reply)
 
-    async def archive_business_message(message: Message) -> None:
+    async def archive_business_message(message: Message, notify: bool = True) -> None:
         connection_id = message.business_connection_id
         if not connection_id:
             return
@@ -256,7 +256,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if await db.owner_archive_enabled(owner_id):
             await db.save_message(connection, message)
         # Notifications are independent from archive retention: pausing storage does not silence alerts.
-        await queue_notification(message, owner_id)
+        if notify:
+            await queue_notification(message, owner_id)
 
     @router.business_message()
     async def business_message_handler(message: Message) -> None:
@@ -272,7 +273,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             return
         owner_id = connection["owner_user_id"]
         previous = await db.get_archived_message(connection_id, message.chat.id, message.message_id)
-        await archive_business_message(message)
+        await archive_business_message(message, notify=False)
         if not await db.notifications_enabled(owner_id):
             return
         sender = message.from_user
