@@ -132,6 +132,7 @@ class ArchiveDB:
         payload = message.model_dump(mode="json", exclude_none=True)
         text = message.text or message.caption or ""
         date_ts = int(message.date.timestamp())
+        edited_ts = int((getattr(message, "edit_date", None) or message.date).timestamp())
         async with aiosqlite.connect(self.path) as db:
             existing = await (await db.execute(
                 "SELECT text FROM archived_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
@@ -140,7 +141,7 @@ class ArchiveDB:
             if existing and existing[0] != text:
                 await db.execute(
                     "INSERT INTO archived_message_edits(connection_id,chat_id,message_id,owner_user_id,old_text,new_text,edited_at) VALUES(?,?,?,?,?,?,?)",
-                    (connection["connection_id"], chat.id, message.message_id, connection["owner_user_id"], existing[0], text, date_ts),
+                    (connection["connection_id"], chat.id, message.message_id, connection["owner_user_id"], existing[0], text, edited_ts),
                 )
             await db.execute("""INSERT INTO archived_messages(connection_id, owner_user_id, chat_id, message_id, date_ts, sender_user_id, sender_name, text, chat_title, raw_json)
                 VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id, chat_id, message_id) DO UPDATE SET
