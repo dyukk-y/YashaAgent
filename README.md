@@ -9,7 +9,8 @@ A consent-first Telegram Business inbox and archive with a responsive Telegram M
 - SQLite archive for accessible text/captions and message metadata, with edit-version history.
 - Immediate Telegram notifications when Telegram reports a business-message edit or deletion.
 - Reply from the Mini App on behalf of the connected Business account when Telegram's `can_reply` right allows it.
-- Button-based menu for archive, search, statistics, AI summary, notification preferences, pause/resume, and archive deletion.\n- Incoming business messages are grouped into a digest roughly once per minute instead of sending one alert per message.
+- Button-based menu for archive, search, statistics, AI summary, notification preferences, pause/resume, and archive deletion.
+- Incoming business messages are grouped into a digest roughly once per minute instead of sending one alert per message.
 - Optional AI summaries. AI is disabled unless AI_API_KEY is configured.
 - Docker Compose with persistent local database storage.
 
@@ -47,7 +48,8 @@ After the first `/start`, everyday actions are available from the persistent but
 - **🔎 Поиск** — enter a word or phrase in the next message
 - **📊 Статистика** — saved and deleted-in-source counts
 - **🧠 Сводка** — optional AI summary (requires `AI_API_KEY`)
-- **🔔 Уведомления** — toggle grouped incoming-message digests\n- **⏱ Интервал сводки** — cycle through the notification batching interval
+- **🔔 Уведомления** — toggle grouped incoming-message digests
+- **⏱ Интервал сводки** — cycle through the notification batching interval
 - **⏸ Пауза архива / ▶️ Продолжить архив** — pause or resume storage
 - **🗑 Очистить архив** — asks for confirmation before deleting records
 
