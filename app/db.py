@@ -376,12 +376,12 @@ class ArchiveDB:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
             sql = """SELECT m.id,m.owner_user_id,m.chat_id,m.message_id,m.media_type,m.file_name,m.mime_type,
-                            m.file_size,m.status,m.created_at,a.chat_title,a.sender_name,a.text,
+                            m.file_size,m.status,m.error,m.created_at,a.chat_title,a.sender_name,a.text,
                             a.date_ts
                      FROM archived_media m
                      LEFT JOIN archived_messages a ON a.owner_user_id=m.owner_user_id
                        AND a.chat_id=m.chat_id AND a.message_id=m.message_id
-                     WHERE m.status IN ('stored','failed','pending','expired')"""
+                     WHERE m.status IN ('stored','failed','pending','expired','quota','too_large')"""
             args: list[Any] = []
             if owner_id is not None:
                 sql += " AND m.owner_user_id=?"
