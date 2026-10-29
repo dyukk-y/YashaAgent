@@ -22,6 +22,8 @@ async def main() -> None:
     dispatcher = Dispatcher()
     dispatcher.include_router(setup_handlers(db, settings))
     web_app = create_web_app(db, bot, settings.bot_token)
+    web_app.state.ai_api_key = settings.ai_api_key
+    web_app.state.ai_model = settings.ai_model
     web_server = uvicorn.Server(
         uvicorn.Config(
             web_app,
