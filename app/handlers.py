@@ -64,7 +64,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             digest_tasks[owner_id] = asyncio.create_task(send_digest(message.bot, owner_id))
 
     @router.message(CommandStart())
-    async def start_handler(message: Message) -> None
+    async def start_handler(message: Message) -> None:
         text = (
             "Привет! Я YashaAgent — архив и управление Telegram Business в одном приложении.\\n\\n"
             "Открой Mini App: там сообщения, поиск, история изменений и удалений, уведомления и все настройки.\\n\\n"
