@@ -214,8 +214,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             f"Telegram ID: {result['owner_user_id']}\\n"
             f"Активное подключение: {'да' if result['connected'] else 'нет'}\\n"
             f"Диалогов в архиве: {result['chat_count']}\\n\\n"
-            "Откройте Mini App кнопкой ниже: в админ-режиме доступны архивы пользователей.",
-            reply_markup=event_markup,
+            "Откройте архив именно этого пользователя кнопкой ниже.",
+            reply_markup=app_markup("Открыть архив пользователя", owner_id=result["owner_user_id"]),
         )
 
     @router.business_connection()
