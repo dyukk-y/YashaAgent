@@ -6,7 +6,7 @@ from pathlib import Path
 from collections import defaultdict
 
 from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import (
     BusinessConnection, BusinessMessagesDeleted, InlineKeyboardButton,
     InlineKeyboardMarkup, Message, WebAppInfo,
@@ -38,6 +38,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if settings.webapp_url.startswith("https://")
         else None
     )
+    admin_lookup_waiting: set[int] = set()
     pending: dict[int, list[str]] = defaultdict(list)
     digest_tasks: dict[int, asyncio.Task] = {}
 
@@ -84,13 +85,46 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         )
         await message.answer(text, reply_markup=event_markup)
 
+    @router.message(Command("admin"))
+    async def admin_handler(message: Message) -> None:
+        if not message.from_user or message.from_user.id not in settings.admins:
+            await message.answer("Команда доступна только главному администратору.")
+            return
+        admin_lookup_waiting.add(message.from_user.id)
+        await message.answer("Отправьте @username пользователя. Я найду Business-подключение и покажу, есть ли у него архив. Поиск работает только по пользователям, чей username Telegram был получен при подключении.")
+
+    @router.message(lambda message: bool(message.from_user and message.text and message.text.strip().startswith("@")))
+    async def admin_username_lookup_handler(message: Message) -> None:
+        if not message.from_user or message.from_user.id not in admin_lookup_waiting:
+            return
+        if message.from_user.id not in settings.admins:
+            admin_lookup_waiting.discard(message.from_user.id)
+            return
+        username = message.text.strip().split()[0].lstrip("@")
+        if not re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
+            await message.answer("Укажите корректный @username Telegram.")
+            return
+        result = await db.find_owner_by_username(username)
+        admin_lookup_waiting.discard(message.from_user.id)
+        if not result:
+            await message.answer("Пользователь не найден среди сохранённых Business-подключений. Он должен подключить бота, а Telegram должен передать его username.")
+            return
+        await message.answer(
+            f"Найден @{result.get('owner_username') or username}\\n"
+            f"Telegram ID: {result['owner_user_id']}\\n"
+            f"Активное подключение: {'да' if result['connected'] else 'нет'}\\n"
+            f"Диалогов в архиве: {result['chat_count']}\\n\\n"
+            "Откройте Mini App кнопкой ниже: в админ-режиме доступны архивы пользователей.",
+            reply_markup=event_markup,
+        )
+
     @router.business_connection()
     async def business_connection_handler(connection: BusinessConnection) -> None:
         rights = connection.rights
         can_read = bool(rights and getattr(rights, "can_read_messages", False))
         can_reply = bool(rights and getattr(rights, "can_reply", False))
         await db.save_connection(connection_id=connection.id, owner_id=connection.user.id,
-            enabled=connection.is_enabled, can_read=can_read, can_reply=can_reply, updated_at=int(connection.date.timestamp()))
+            enabled=connection.is_enabled, can_read=can_read, can_reply=can_reply, updated_at=int(connection.date.timestamp()), owner_username=getattr(connection.user, 'username', '') or '')
         log.info("Business connection updated: owner=%s enabled=%s can_read=%s can_reply=%s", connection.user.id, connection.is_enabled, can_read, can_reply)
 
     def extract_media(message: Message) -> dict | None:
