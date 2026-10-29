@@ -350,7 +350,7 @@ class ArchiveDB:
                     SELECT owner_user_id,chat_id,chat_title,date_ts,text,0 AS is_deleted FROM message_buffer
                 )
                 SELECT a.chat_id, MAX(a.chat_title) AS title,
-                       SUM(CASE WHEN a.chat_id IN (SELECT chat_id FROM archived_messages WHERE owner_user_id=?) THEN 1 ELSE 0 END) AS message_count,
+                       (SELECT COUNT(*) FROM archived_messages x WHERE x.owner_user_id=a.owner_user_id AND x.chat_id=a.chat_id) AS message_count,
                        COALESCE(SUM(a.is_deleted),0) AS deleted_count, MAX(a.date_ts) AS last_date,
                        (SELECT x.text FROM message_buffer x WHERE x.owner_user_id=a.owner_user_id AND x.chat_id=a.chat_id ORDER BY x.date_ts DESC LIMIT 1) AS last_text,
                        (SELECT COUNT(*) FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id) AS edited_count
