@@ -185,7 +185,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if not connection_allows_archiving(connection):
             log.warning(
                 "Ignoring business update for disabled connection: connection=%s enabled=%s",
-                connection_id, connection["is_enabled"], connection.get("can_read_messages", False),
+                connection_id, connection["is_enabled"],
             )
             return
         owner_id = connection["owner_user_id"]
@@ -220,7 +220,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             return
         if not connection_allows_archiving(connection):
             log.warning(
-                "Ignoring business update: connection=%s enabled=%s can_read_messages=%s",
+                "Ignoring business update for disabled connection: connection=%s enabled=%s",
                 connection_id, connection["is_enabled"], connection.get("can_read_messages", False),
             )
             return
