@@ -265,6 +265,12 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         owner_id = connection["owner_user_id"]
         if await db.owner_archive_enabled(owner_id):
             await db.save_message(connection, message)
+            log.info(
+                "Archived business message owner=%s chat=%s message=%s",
+                owner_id, message.chat.id, message.message_id,
+            )
+        else:
+            log.warning("Archive is paused for owner=%s; message was not stored", owner_id)
         # Notifications are independent from archive retention: pausing storage does not silence alerts.
         if notify:
             await queue_notification(message, owner_id)
@@ -319,6 +325,10 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         owner_id = connection["owner_user_id"]
         deleted_rows = await db.get_archived_messages(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
         await db.mark_deleted(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
+        log.info(
+            "Business deletion event owner=%s chat=%s ids=%s archived_matches=%s",
+            owner_id, event.chat.id, len(event.message_ids), len(deleted_rows),
+        )
         if not await db.notifications_enabled(owner_id):
             return
         if deleted_rows:
