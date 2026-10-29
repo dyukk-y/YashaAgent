@@ -40,12 +40,13 @@ def verify_init_data(init_data: str, bot_token: str, max_age: int = 86400) -> di
     return {"id": user_id, "first_name": user.get("first_name", ""), "username": user.get("username", "")}
 
 
-def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | None = None) -> FastAPI:
+def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | None = None, media_root: str = "/data/media") -> FastAPI:
     api = FastAPI(title="YashaAgent", docs_url=None, redoc_url=None)
     api.state.archive_db = db
     api.state.telegram_bot = bot
     api.state.bot_token = bot_token
     api.state.admin_ids = set(admin_ids or set())
+    api.state.media_root = Path(media_root).resolve()
     api.state.ai_api_key = ""
     api.state.ai_model = "gpt-4.1-mini"
 
@@ -236,6 +237,46 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
             raise HTTPException(status_code=502, detail="Telegram не принял сообщение. Проверьте права подключения и активность чата.") from exc
         await db.save_message(connection, sent, is_outgoing=True)
         return {"ok": True, "message_id": sent.message_id, "date": int(sent.date.timestamp())}
+
+    @api.get("/api/chats/{chat_id}/messages/{message_id}/media/{media_id}")
+    async def archived_media(chat_id: int, message_id: int, media_id: int, request: Request):
+        user = await owner_for(request)
+        if not await db.owner_has_chat(user["id"], chat_id):
+            raise HTTPException(status_code=404, detail="Чат не найден в вашем архиве")
+        media = await db.media_file(user["id"], chat_id, message_id, media_id)
+        if not media or media["status"] != "stored" or not media["stored_path"]:
+            raise HTTPException(status_code=404, detail="Файл не сохранён или недоступен")
+        path = Path(media["stored_path"]).resolve()
+        try:
+            path.relative_to(request.app.state.media_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Файл не найден") from exc
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Файл отсутствует в хранилище")
+        inline = (media.get("mime_type") or "").startswith("image/") and (media.get("mime_type") or "") != "image/svg+xml"
+        return FileResponse(path, media_type=media.get("mime_type") or "application/octet-stream",
+                            filename=media.get("file_name") or path.name,
+                            content_disposition_type="inline" if inline else "attachment")
+
+    @api.get("/api/admin/chats/{owner_id}/{chat_id}/messages/{message_id}/media/{media_id}")
+    async def admin_archived_media(owner_id: int, chat_id: int, message_id: int, media_id: int, request: Request):
+        await require_admin(request)
+        if not await db.owner_has_chat(owner_id, chat_id):
+            raise HTTPException(status_code=404, detail="Чат не найден в архиве")
+        media = await db.media_file(owner_id, chat_id, message_id, media_id)
+        if not media or media["status"] != "stored" or not media["stored_path"]:
+            raise HTTPException(status_code=404, detail="Файл не сохранён или недоступен")
+        path = Path(media["stored_path"]).resolve()
+        try:
+            path.relative_to(request.app.state.media_root)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail="Файл не найден") from exc
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Файл отсутствует в хранилище")
+        inline = (media.get("mime_type") or "").startswith("image/") and (media.get("mime_type") or "") != "image/svg+xml"
+        return FileResponse(path, media_type=media.get("mime_type") or "application/octet-stream",
+                            filename=media.get("file_name") or path.name,
+                            content_disposition_type="inline" if inline else "attachment")
 
     @api.get("/")
     async def index():
