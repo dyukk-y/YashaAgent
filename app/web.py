@@ -91,6 +91,13 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
             raise HTTPException(status_code=404, detail="Чат не найден в архиве")
         return {"edits": await db.edit_history(owner_id, chat_id, message_id)}
 
+    @api.get("/api/admin/events")
+    async def admin_events(request: Request, kind: str = "deleted", limit: int = 100):
+        await require_admin(request)
+        if kind not in {"deleted", "edited"}:
+            raise HTTPException(status_code=400, detail="Тип события должен быть deleted или edited")
+        return {"events": await db.list_events(None, kind, min(max(limit, 1), 200))}
+
     @api.post("/api/chats/{chat_id}/hide")
     async def hide_chat(chat_id: int, request: Request):
         user = await owner_for(request)
@@ -191,6 +198,13 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
         if not await db.owner_has_chat(user["id"], chat_id):
             raise HTTPException(status_code=404, detail="Чат не найден в вашем архиве")
         return {"edits": await db.edit_history(user["id"], chat_id, message_id)}
+
+    @api.get("/api/events")
+    async def events(request: Request, kind: str = "deleted", limit: int = 100):
+        user = await owner_for(request)
+        if kind not in {"deleted", "edited"}:
+            raise HTTPException(status_code=400, detail="Тип события должен быть deleted или edited")
+        return {"events": await db.list_events(user["id"], kind, min(max(limit, 1), 200))}
 
     @api.get("/api/search")
     async def search(request: Request, q: str):
