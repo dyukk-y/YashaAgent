@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import re
+from pathlib import Path
 from collections import defaultdict
 
 from aiogram import Router
@@ -81,6 +83,51 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             enabled=connection.is_enabled, can_read=can_read, can_reply=can_reply, updated_at=int(connection.date.timestamp()))
         log.info("Business connection updated: owner=%s enabled=%s can_read=%s can_reply=%s", connection.user.id, connection.is_enabled, can_read, can_reply)
 
+    def extract_media(message: Message) -> dict | None:
+        """Choose the best downloadable attachment exposed by the Telegram Bot API."""
+        if message.photo:
+            item = max(message.photo, key=lambda photo: photo.file_size or 0)
+            return {"file_id": item.file_id, "file_unique_id": item.file_unique_id,
+                    "media_type": "photo", "file_size": item.file_size, "mime_type": "image/jpeg"}
+        for attr, media_type in (
+            ("video", "video"), ("animation", "animation"), ("document", "document"),
+            ("sticker", "sticker"), ("voice", "voice"), ("audio", "audio"),
+            ("video_note", "video_note"),
+        ):
+            item = getattr(message, attr, None)
+            if item:
+                return {
+                    "file_id": item.file_id,
+                    "file_unique_id": item.file_unique_id,
+                    "media_type": media_type,
+                    "file_name": getattr(item, "file_name", "") or "",
+                    "mime_type": getattr(item, "mime_type", "") or "",
+                    "file_size": getattr(item, "file_size", None),
+                }
+        return None
+
+    async def archive_media(message: Message, connection: dict, owner_id: int) -> None:
+        media = extract_media(message)
+        if not media:
+            return
+        media_id = await db.save_media_record(connection, message, media)
+        try:
+            telegram_file = await message.bot.get_file(media["file_id"])
+            if not telegram_file.file_path:
+                raise RuntimeError("Telegram did not return a file path")
+            root = Path(settings.media_path).resolve()
+            target_dir = root / str(owner_id) / str(message.chat.id) / str(message.message_id)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            original_name = Path(media.get("file_name") or Path(telegram_file.file_path).name).name
+            original_name = re.sub(r"[^A-Za-z0-9._ -]", "_", original_name).strip(" .") or f"{media['media_type']}.bin"
+            target = target_dir / f"{media_id}_{original_name}"
+            await message.bot.download_file(telegram_file.file_path, destination=target)
+            await db.update_media_record(media_id, str(target), "stored", "")
+            log.info("Archived media owner=%s chat=%s message=%s type=%s", owner_id, message.chat.id, message.message_id, media["media_type"])
+        except Exception as exc:
+            await db.update_media_record(media_id, "", "failed", str(exc))
+            log.exception("Could not archive media owner=%s chat=%s message=%s", owner_id, message.chat.id, message.message_id)
+
     async def archive_business_message(message: Message, notify: bool = True) -> None:
         connection_id = message.business_connection_id
         if not connection_id:
@@ -98,6 +145,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         owner_id = connection["owner_user_id"]
         if await db.owner_archive_enabled(owner_id):
             await db.save_message(connection, message)
+            await archive_media(message, connection, owner_id)
             log.info(
                 "Archived business message owner=%s chat=%s message=%s",
                 owner_id, message.chat.id, message.message_id,
