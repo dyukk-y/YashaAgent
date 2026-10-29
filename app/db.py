@@ -357,7 +357,7 @@ class ArchiveDB:
                 FROM all_chat_rows a WHERE a.owner_user_id=?
                   AND NOT EXISTS (SELECT 1 FROM hidden_chats h WHERE h.owner_user_id=a.owner_user_id AND h.chat_id=a.chat_id)
                 GROUP BY a.owner_user_id,a.chat_id ORDER BY last_date DESC
-            """, (owner_id, owner_id))
+            """, (owner_id,))
             return [dict(row) for row in await cur.fetchall()]
 
     async def chat_messages(self, owner_id: int, chat_id: int, limit: int = 100, before: int | None = None) -> list[dict[str, Any]]:
