@@ -359,8 +359,12 @@ class ArchiveDB:
         chat_title = getattr(chat, "title", None) or getattr(chat, "first_name", None) or getattr(chat, "username", None) or str(chat.id)
         payload = message.model_dump(mode="json", exclude_none=True)
         text = message.text or message.caption or ""
-        date_ts = int(message.date.timestamp())
-        edited_ts = int((getattr(message, "edit_date", None) or message.date).timestamp())
+        date_value = message.date
+        date_ts = int(date_value.timestamp() if hasattr(date_value, "timestamp") else date_value)
+        edit_value = getattr(message, "edit_date", None) or date_value
+        # Telegram may expose edit_date as a Unix timestamp (int), while date
+        # is usually a datetime. Support both representations.
+        edited_ts = int(edit_value.timestamp() if hasattr(edit_value, "timestamp") else edit_value)
         async with aiosqlite.connect(self.path) as db:
             # The first version may still be in the short-lived message buffer.
             # Check both stores before upserting the edited payload, otherwise the
