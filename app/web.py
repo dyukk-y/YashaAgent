@@ -216,6 +216,14 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
             raise HTTPException(status_code=400, detail="Тип события должен быть deleted или edited")
         return {"events": await db.list_events(user["id"], kind, min(max(limit, 1), 200))}
 
+    @api.get("/api/admin/search")
+    async def admin_search(request: Request, q: str):
+        await require_admin(request)
+        query = q.strip()
+        if not query:
+            return {"messages": []}
+        return {"messages": await db.search(None, query, 100)}
+
     @api.get("/api/search")
     async def search(request: Request, q: str):
         user = await owner_for(request)
