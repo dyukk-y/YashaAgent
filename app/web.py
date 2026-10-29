@@ -133,6 +133,12 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
         total, deleted = await db.stats(owner_id)
         settings["total_messages"] = total
         settings["deleted_messages"] = deleted
+        settings["media_usage"] = await db.media_usage(owner_id)
+        settings["media_limits"] = {
+            "max_file_mb": request.app.state.media_max_file_mb,
+            "quota_mb": request.app.state.media_quota_mb,
+            "retention_days": request.app.state.media_retention_days,
+        }
         return settings
 
     class SettingsBody(BaseModel):
