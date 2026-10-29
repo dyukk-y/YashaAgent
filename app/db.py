@@ -131,6 +131,17 @@ class ArchiveDB:
                 SELECT owner_user_id, MAX(owner_username), MIN(updated_at) FROM business_connections GROUP BY owner_user_id""")
             await db.commit()
 
+    async def register_admin_user(self, owner_id: int, username: str = "", seen_at: int | None = None) -> None:
+        import time
+        timestamp = int(seen_at or time.time())
+        normalized = username.strip().lstrip("@").lower()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("""INSERT INTO admin_user_registry(owner_user_id, owner_username, first_seen) VALUES(?,?,?)
+                ON CONFLICT(owner_user_id) DO UPDATE SET
+                owner_username=CASE WHEN excluded.owner_username!='' THEN excluded.owner_username ELSE admin_user_registry.owner_username END""",
+                (owner_id, normalized, timestamp))
+            await db.commit()
+
     async def admin_stats(self) -> dict[str, int]:
         async with aiosqlite.connect(self.path) as db:
             stats = {}
