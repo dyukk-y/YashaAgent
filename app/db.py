@@ -71,6 +71,25 @@ class ArchiveDB:
                     chat_title TEXT NOT NULL DEFAULT '',
                     PRIMARY KEY(connection_id, chat_id, message_id)
                 );
+                CREATE TABLE IF NOT EXISTS archived_media (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    connection_id TEXT NOT NULL,
+                    owner_user_id INTEGER NOT NULL,
+                    chat_id INTEGER NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    file_id TEXT NOT NULL,
+                    file_unique_id TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    file_name TEXT NOT NULL DEFAULT '',
+                    mime_type TEXT NOT NULL DEFAULT '',
+                    file_size INTEGER,
+                    stored_path TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    error TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL,
+                    UNIQUE(connection_id, chat_id, message_id, file_unique_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_media_owner_message ON archived_media(owner_user_id, chat_id, message_id);
                 INSERT OR IGNORE INTO deleted_message_events
                     (connection_id, owner_user_id, chat_id, message_id, deleted_at, chat_title)
                     SELECT connection_id, owner_user_id, chat_id, message_id,
@@ -298,7 +317,57 @@ class ArchiveDB:
             rows.reverse()
             for row in rows:
                 row["is_outgoing"] = row["sender_user_id"] == owner_id
+                row["media"] = await self.message_media(owner_id, chat_id, row["message_id"])
             return rows
+
+    async def save_media_record(self, connection: dict[str, Any], message: Any, media: dict[str, Any]) -> int:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                """INSERT INTO archived_media
+                   (connection_id, owner_user_id, chat_id, message_id, file_id, file_unique_id,
+                    media_type, file_name, mime_type, file_size, status, created_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?, 'pending', ?)
+                   ON CONFLICT(connection_id, chat_id, message_id, file_unique_id) DO UPDATE SET
+                    file_id=excluded.file_id, media_type=excluded.media_type,
+                    file_name=excluded.file_name, mime_type=excluded.mime_type,
+                    file_size=excluded.file_size""",
+                (connection["connection_id"], connection["owner_user_id"], message.chat.id,
+                 message.message_id, media["file_id"], media["file_unique_id"], media["media_type"],
+                 media.get("file_name", ""), media.get("mime_type", ""), media.get("file_size"),
+                 int(message.date.timestamp())),
+            )
+            row = await (await db.execute(
+                "SELECT id FROM archived_media WHERE connection_id=? AND chat_id=? AND message_id=? AND file_unique_id=?",
+                (connection["connection_id"], message.chat.id, message.message_id, media["file_unique_id"]),
+            )).fetchone()
+            await db.commit()
+            return int(row[0])
+
+    async def update_media_record(self, media_id: int, stored_path: str = "", status: str = "stored", error: str = "") -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("UPDATE archived_media SET stored_path=?, status=?, error=? WHERE id=?",
+                             (stored_path, status, error[:500], media_id))
+            await db.commit()
+
+    async def message_media(self, owner_id: int, chat_id: int, message_id: int) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT id, media_type, file_name, mime_type, file_size, status
+                   FROM archived_media WHERE owner_user_id=? AND chat_id=? AND message_id=? ORDER BY id""",
+                (owner_id, chat_id, message_id),
+            )
+            return [dict(row) for row in await cur.fetchall()]
+
+    async def media_file(self, owner_id: int, chat_id: int, message_id: int, media_id: int) -> dict[str, Any] | None:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            row = await (await db.execute(
+                """SELECT id, stored_path, file_name, mime_type, file_size, status
+                   FROM archived_media WHERE owner_user_id=? AND chat_id=? AND message_id=? AND id=?""",
+                (owner_id, chat_id, message_id, media_id),
+            )).fetchone()
+            return dict(row) if row else None
 
     async def reply_connection_for_chat(self, owner_id: int, chat_id: int) -> dict[str, Any] | None:
         async with aiosqlite.connect(self.path) as db:
