@@ -139,7 +139,16 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             original_name = re.sub(r"[^A-Za-z0-9._ -]", "_", original_name).strip(" .") or f"{media['media_type']}.bin"
             target = target_dir / f"{media_id}_{original_name}"
             await message.bot.download_file(telegram_file.file_path, destination=target)
-            await db.update_media_record(media_id, str(target), "stored", "")
+            downloaded_size = target.stat().st_size
+            if downloaded_size > max_file_bytes:
+                target.unlink(missing_ok=True)
+                await db.update_media_record(media_id, "", "too_large", f"Размер больше лимита {settings.media_max_file_mb} МБ", downloaded_size)
+                return
+            if usage + downloaded_size > quota_bytes:
+                target.unlink(missing_ok=True)
+                await db.update_media_record(media_id, "", "quota", f"Файл превысит лимит хранилища {settings.media_quota_mb} МБ", downloaded_size)
+                return
+            await db.update_media_record(media_id, str(target), "stored", "", downloaded_size)
             log.info("Archived media owner=%s chat=%s message=%s type=%s", owner_id, message.chat.id, message.message_id, media["media_type"])
         except Exception as exc:
             await db.update_media_record(media_id, "", "failed", str(exc))
