@@ -105,6 +105,7 @@ def test_media_gallery_usage_and_retention(tmp_path):
         await db.save_connection("bc-1", 42, True, True, 100)
         connection = await db.get_connection("bc-1")
         message = FakeMessage()
+        message.media_group_id = "album-123"
         media = {
             "file_id": "file-id",
             "file_unique_id": "unique-id",
@@ -121,6 +122,7 @@ def test_media_gallery_usage_and_retention(tmp_path):
         assert len(gallery) == 1
         assert gallery[0]["id"] == media_id
         assert gallery[0]["status"] == "stored"
+        assert gallery[0]["media_group_id"] == "album-123"
         assert await db.media_usage_for_owner(42) == 512
         expired = await db.expire_media_before(9_999_999_999)
         assert expired == [{"id": media_id, "stored_path": str(stored)}]
