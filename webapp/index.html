@@ -148,8 +148,8 @@ const mediaLabels={all:'Все',photo:'Фото',video:'Видео',animation:'G
    }).join('');
    if(!append)list.innerHTML=header+'<div class="media-grid">'+cards+'</div>'+(items.length===0?'<div class="empty"><div class="empty-icon">▧</div><b>Вложений пока нет</b><p>Здесь появятся файлы, которые бот сможет сохранить после подключения Telegram Business.</p></div>':'')+'<button class="media-more" id="mediaMore" '+(items.length<60?'hidden':'')+'>Загрузить ещё</button></div>';
    else {const grid=list.querySelector('.media-grid');if(grid)grid.insertAdjacentHTML('beforeend',cards);const more=$('mediaMore');if(more)more.hidden=items.length<60;}
-   list.querySelectorAll('[data-media-kind]').forEach(btn=>btn.addEventListener('click',()=>loadMedia(btn.dataset.mediaKind,true)));
-   list.querySelectorAll('[data-gallery-open]').forEach(btn=>btn.addEventListener('click',async()=>{
+   list.querySelectorAll('[data-media-kind]').forEach(btn=>{if(btn.dataset.bound==='1')return;btn.dataset.bound='1';btn.addEventListener('click',()=>loadMedia(btn.dataset.mediaKind,true))});
+   list.querySelectorAll('[data-gallery-open]').forEach(btn=>{if(btn.dataset.bound==='1')return;btn.dataset.bound='1';btn.addEventListener('click',async()=>{
      if(btn.dataset.loading==='1')return;btn.dataset.loading='1';const old=btn.innerHTML;btn.textContent='Загрузка…';
      try{const res=await fetch(btn.dataset.galleryOpen,{headers:{'X-Telegram-Init-Data':initData}});if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error(err.detail||'Файл недоступен')}const blob=await res.blob();const objectUrl=URL.createObjectURL(blob);const mime=btn.dataset.galleryMime||blob.type||'';const type=btn.dataset.galleryType||'';
        if(mime.startsWith('image/')&&mime!=='image/svg+xml'){const img=document.createElement('img');img.src=objectUrl;img.alt=btn.dataset.galleryName||'Изображение';if(btn.classList.contains('media-cover'))btn.replaceChildren(img);else{const a=document.createElement('a');a.href=objectUrl;a.target='_blank';a.rel='noopener';a.textContent='Открыть изображение';btn.replaceWith(a)}}
@@ -158,8 +158,8 @@ const mediaLabels={all:'Все',photo:'Фото',video:'Видео',animation:'G
        else{const a=document.createElement('a');a.href=objectUrl;a.download=btn.dataset.galleryName||'attachment';a.click();btn.textContent='Скачано';setTimeout(()=>URL.revokeObjectURL(objectUrl),60000)}
      }catch(err){btn.innerHTML=old;tg?.showAlert?tg.showAlert(err.message):alert(err.message)}finally{btn.dataset.loading='0'}
    }));
-   list.querySelectorAll('[data-gallery-chat]').forEach(btn=>btn.addEventListener('click',async()=>{const chat=Number(btn.dataset.galleryChat),owner=Number(btn.dataset.galleryOwner);if(adminMode)await openAdminChat(owner,chat);else await openChat(chat);const id=Number(btn.dataset.galleryMessage);setTimeout(()=>{const target=$('message-'+id);if(target){target.scrollIntoView({behavior:'smooth',block:'center'});target.classList.add('event-focus')}},80)}));
-   $('mediaMore')?.addEventListener('click',()=>loadMedia(mediaKind,false));
+   list.querySelectorAll('[data-gallery-chat]').forEach(btn=>{if(btn.dataset.bound==='1')return;btn.dataset.bound='1';btn.addEventListener('click',async()=>{const chat=Number(btn.dataset.galleryChat),owner=Number(btn.dataset.galleryOwner);if(adminMode)await openAdminChat(owner,chat);else await openChat(chat);const id=Number(btn.dataset.galleryMessage);setTimeout(()=>{const target=$('message-'+id);if(target){target.scrollIntoView({behavior:'smooth',block:'center'});target.classList.add('event-focus')}},80)})});
+   if($('mediaMore'))$('mediaMore').onclick=()=>loadMedia(mediaKind,false);
  }
  async function loadMedia(kind=mediaKind,reset=true){
    mediaKind=kind;if(reset)mediaOffset=0;const list=$('chatList');if(reset)list.innerHTML='<div class="spinner">Загружаю медиатеку…</div>';
