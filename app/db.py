@@ -369,6 +369,63 @@ class ArchiveDB:
             )).fetchone()
             return dict(row) if row else None
 
+    async def list_media(self, owner_id: int | None, media_type: str = "all", limit: int = 60, offset: int = 0) -> list[dict[str, Any]]:
+        allowed = {"photo", "video", "animation", "document", "sticker", "voice", "audio", "video_note"}
+        if media_type != "all" and media_type not in allowed:
+            return []
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            sql = """SELECT m.id,m.owner_user_id,m.chat_id,m.message_id,m.media_type,m.file_name,m.mime_type,
+                            m.file_size,m.status,m.created_at,a.chat_title,a.sender_name,a.text,a.caption,
+                            a.date_ts
+                     FROM archived_media m
+                     LEFT JOIN archived_messages a ON a.owner_user_id=m.owner_user_id
+                       AND a.chat_id=m.chat_id AND a.message_id=m.message_id
+                     WHERE m.status IN ('stored','failed','pending','expired')"""
+            args: list[Any] = []
+            if owner_id is not None:
+                sql += " AND m.owner_user_id=?"
+                args.append(owner_id)
+            if media_type != "all":
+                sql += " AND m.media_type=?"
+                args.append(media_type)
+            sql += " ORDER BY m.created_at DESC, m.id DESC LIMIT ? OFFSET ?"
+            args.extend([min(max(limit, 1), 100), max(offset, 0)])
+            cur = await db.execute(sql, args)
+            return [dict(row) for row in await cur.fetchall()]
+
+    async def media_usage(self, owner_id: int | None = None) -> dict[str, int]:
+        async with aiosqlite.connect(self.path) as db:
+            if owner_id is None:
+                row = await (await db.execute(
+                    "SELECT COALESCE(SUM(file_size),0), COUNT(*) FROM archived_media WHERE status='stored'"
+                )).fetchone()
+            else:
+                row = await (await db.execute(
+                    "SELECT COALESCE(SUM(file_size),0), COUNT(*) FROM archived_media WHERE owner_user_id=? AND status='stored'",
+                    (owner_id,),
+                )).fetchone()
+            return {"bytes": int(row[0] or 0), "files": int(row[1] or 0)}
+
+    async def media_usage_for_owner(self, owner_id: int) -> int:
+        usage = await self.media_usage(owner_id)
+        return usage["bytes"]
+
+    async def expire_media_before(self, cutoff_ts: int) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                "SELECT id,stored_path FROM archived_media WHERE status='stored' AND created_at < ? AND stored_path != ''",
+                (cutoff_ts,),
+            )
+            rows = [dict(row) for row in await cur.fetchall()]
+            await db.execute(
+                "UPDATE archived_media SET status='expired', stored_path='', error='Истёк срок хранения' WHERE status='stored' AND created_at < ?",
+                (cutoff_ts,),
+            )
+            await db.commit()
+            return rows
+
     async def reply_connection_for_chat(self, owner_id: int, chat_id: int) -> dict[str, Any] | None:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
