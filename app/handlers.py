@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -102,28 +103,28 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             "сообщения собираю в одну сводку примерно раз в минуту, чтобы не засыпать уведомлениями.\n\n"
             "Подключи бота в настройках Telegram Business и выдай необходимые права. "
             "Для первой настройки нужен /start; дальше используй меню ниже.",
-            reply_markup=MENU,
+            reply_markup=menu,
         )
 
     @router.message(F.text == BTN_SEARCH)
     async def search_start(message: Message, state: FSMContext) -> None:
         await state.set_state(SearchFlow.waiting_for_query)
-        await message.answer("Напиши слово или фразу для поиска по своему архиву. Для отмены нажми любую кнопку меню.", reply_markup=MENU)
+        await message.answer("Напиши слово или фразу для поиска по своему архиву. Для отмены нажми любую кнопку меню.", reply_markup=menu)
 
     @router.message(SearchFlow.waiting_for_query, F.text)
     async def search_query(message: Message, state: FSMContext) -> None:
         if message.text in {BTN_ARCHIVE, BTN_SEARCH, BTN_STATS, BTN_SUMMARY, BTN_NOTIFICATIONS, BTN_INTERVAL, BTN_APP, BTN_PAUSE, BTN_RESUME, BTN_FORGET}:
             await state.clear()
-            await message.answer("Поиск отменён.", reply_markup=MENU)
+            await message.answer("Поиск отменён.", reply_markup=menu)
             return
         await state.clear()
         query = (message.text or "").strip()
         if not query:
-            await message.answer("Введи слово или фразу для поиска.", reply_markup=MENU)
+            await message.answer("Введи слово или фразу для поиска.", reply_markup=menu)
             return
         rows = await db.search(message.from_user.id, query)
         if not rows:
-            await message.answer("Ничего не найдено. Попробуй другое слово или часть фразы.", reply_markup=MENU)
+            await message.answer("Ничего не найдено. Попробуй другое слово или часть фразы.", reply_markup=menu)
             return
         lines = []
         for row in rows:
@@ -133,7 +134,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
                 text = text[:347] + "..."
             marker = " · удалено в исходном чате" if row["is_deleted"] else ""
             lines.append(f"🕒 {date} · {row['sender_name'] or 'Контакт'}{marker}\n{text}")
-        await message.answer(("🔎 Найдено: " + str(len(rows)) + "\n\n" + "\n\n".join(lines))[:3900], reply_markup=MENU)
+        await message.answer(("🔎 Найдено: " + str(len(rows)) + "\n\n" + "\n\n".join(lines))[:3900], reply_markup=menu)
 
     @router.message(F.text == BTN_ARCHIVE)
     async def archive_overview(message: Message) -> None:
@@ -144,13 +145,13 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             f"🗂 <b>Мой архив</b>\n\nЗаписей: <b>{total}</b>\nУдалены в исходном чате: <b>{deleted}</b>\n"
             f"Состояние: <b>{connections_text}</b>\n\n"
             "Сохраняются доступные текст и подписи к медиа. Старую историю бот не загружает.",
-            reply_markup=MENU, parse_mode="HTML",
+            reply_markup=menu, parse_mode="HTML",
         )
 
     @router.message(F.text == BTN_STATS)
     async def stats_handler(message: Message) -> None:
         total, deleted = await db.stats(message.from_user.id)
-        await message.answer(f"📊 <b>Статистика архива</b>\nВсего записей: {total}\nПомечено удалёнными: {deleted}", reply_markup=MENU, parse_mode="HTML")
+        await message.answer(f"📊 <b>Статистика архива</b>\nВсего записей: {total}\nПомечено удалёнными: {deleted}", reply_markup=menu, parse_mode="HTML")
 
     @router.message(F.text == BTN_NOTIFICATIONS)
     async def notifications_handler(message: Message) -> None:
@@ -159,7 +160,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         await db.set_notifications_enabled(message.from_user.id, new_value)
         status = "включены ✅" if new_value else "выключены 🔕"
         detail = "Входящие сообщения будут собираться в групповые уведомления примерно раз в минуту." if new_value else "Архив продолжит сохранять доступные сообщения; уведомления отключены."
-        await message.answer(f"🔔 Уведомления {status}.\n{detail}", reply_markup=MENU)
+        await message.answer(f"🔔 Уведомления {status}.\n{detail}", reply_markup=menu)
 
     @router.message(F.text == BTN_INTERVAL)
     async def interval_handler(message: Message) -> None:
@@ -172,18 +173,18 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         await message.answer(
             f"⏱ Интервал группировки: <b>{labels[next_interval]}</b>.\n"
             "Нажми кнопку ещё раз, чтобы выбрать следующий интервал.",
-            reply_markup=MENU, parse_mode="HTML",
+            reply_markup=menu, parse_mode="HTML",
         )
 
     @router.message(F.text == BTN_PAUSE)
     async def pause_archive(message: Message) -> None:
         await db.set_archive_enabled(message.from_user.id, False)
-        await message.answer("⏸ Архивирование приостановлено. Уже сохранённые записи остались на месте.", reply_markup=MENU)
+        await message.answer("⏸ Архивирование приостановлено. Уже сохранённые записи остались на месте.", reply_markup=menu)
 
     @router.message(F.text == BTN_RESUME)
     async def resume_archive(message: Message) -> None:
         await db.set_archive_enabled(message.from_user.id, True)
-        await message.answer("▶️ Архивирование включено для подключений с разрешением Telegram на чтение.", reply_markup=MENU)
+        await message.answer("▶️ Архивирование включено для подключений с разрешением Telegram на чтение.", reply_markup=menu)
 
     @router.message(F.text == BTN_FORGET)
     async def forget_confirm(message: Message) -> None:
@@ -213,13 +214,13 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     async def summary_handler(message: Message) -> None:
         owner_id = message.from_user.id
         if not settings.ai_api_key:
-            await message.answer("🧠 AI-сводка пока не настроена. Владелец бота должен добавить AI_API_KEY в настройки сервера. Без этого сообщения не отправляются стороннему AI-провайдеру.", reply_markup=MENU)
+            await message.answer("🧠 AI-сводка пока не настроена. Владелец бота должен добавить AI_API_KEY в настройки сервера. Без этого сообщения не отправляются стороннему AI-провайдеру.", reply_markup=menu)
             return
         texts = await db.recent_texts(owner_id)
         if not texts:
-            await message.answer("Пока нет текстовых сообщений для сводки.", reply_markup=MENU)
+            await message.answer("Пока нет текстовых сообщений для сводки.", reply_markup=menu)
             return
-        status = await message.answer("🧠 Собираю краткую сводку…", reply_markup=MENU)
+        status = await message.answer("🧠 Собираю краткую сводку…", reply_markup=menu)
         try:
             client = AsyncOpenAI(api_key=settings.ai_api_key)
             response = await client.chat.completions.create(
@@ -278,12 +279,14 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         name = " ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else "Контакт"
         old_text = (previous or {}).get("text", "") or "[текст не был сохранён]"
         new_text = message.text or message.caption or "[сообщение без текста]"
-        old_text = old_text[:1200]
-        new_text = new_text[:1200]
+        old_text = html.escape(old_text[:1200])
+        new_text = html.escape(new_text[:1200])
+        name = html.escape(name)
+        chat_name = html.escape(getattr(message.chat, "title", None) or getattr(message.chat, "first_name", None) or "Личный чат")
         try:
             await message.bot.send_message(
                 owner_id,
-                f"✏️ <b>Сообщение изменено</b>\\nЧат: {getattr(message.chat, 'title', None) or getattr(message.chat, 'first_name', None) or 'Личный чат'}\\nАвтор: {name}\\n\\n<b>Было:</b>\\n{old_text}\\n\\n<b>Стало:</b>\\n{new_text}",
+                f"✏️ <b>Сообщение изменено</b>\nЧат: {chat_name}\nАвтор: {name}\n\n<b>Было:</b>\n{old_text}\n\n<b>Стало:</b>\n{new_text}",
                 reply_markup=menu,
                 parse_mode="HTML",
             )
@@ -303,20 +306,19 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if deleted_rows:
             lines = []
             for row in deleted_rows[:10]:
-                text = (row["text"] or "[сообщение без текста]").replace("\\n", " ")
-                if len(text) > 700:
-                    text = text[:697] + "…"
-                lines.append(f"• {row['sender_name'] or 'Контакт'}: {text}")
+                text = html.escape((row["text"] or "[сообщение без текста]").replace("\n", " ")[:700])
+                sender_name = html.escape(row["sender_name"] or "Контакт")
+                lines.append(f"• {sender_name}: {text}")
             if len(deleted_rows) > 10:
                 lines.append(f"…и ещё {len(deleted_rows) - 10}")
-            body = "\\n".join(lines)
+            body = "\n".join(lines)
         else:
             body = "Telegram сообщил об удалении, но текста этих сообщений нет в архиве."
-        chat_name = getattr(event.chat, "title", None) or getattr(event.chat, "first_name", None) or "Личный чат"
+        chat_name = html.escape(getattr(event.chat, "title", None) or getattr(event.chat, "first_name", None) or "Личный чат")
         try:
             await event.bot.send_message(
                 owner_id,
-                f"🗑 <b>Сообщение удалено</b>\\nЧат: {chat_name}\\nУдалений в событии: {len(event.message_ids)}\\n\\n{body}"[:3900],
+                f"🗑 <b>Сообщение удалено</b>\nЧат: {chat_name}\nУдалений в событии: {len(event.message_ids)}\n\n{body}"[:3900],
                 reply_markup=menu,
                 parse_mode="HTML",
             )
