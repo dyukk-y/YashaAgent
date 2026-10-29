@@ -662,18 +662,35 @@ class ArchiveDB:
             await db.commit()
 
     async def search(self, owner_id: int | None, query: str, limit: int = 15) -> list[dict[str, Any]]:
+        """Search current messages and saved revisions; every query term must match."""
+        import re
+        groups = re.findall(r'"([^"]+)"|(\S+)', query)
+        terms = [phrase or word for phrase, word in groups]
+        terms = [term.strip() for term in terms if term.strip()][:12]
+        if not terms:
+            return []
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
-            if owner_id is None:
-                cur = await db.execute(
-                    "SELECT owner_user_id,chat_id,message_id,date_ts,sender_name,text,is_deleted FROM archived_messages WHERE text LIKE ? ORDER BY date_ts DESC LIMIT ?",
-                    (f"%{query}%", limit),
-                )
-            else:
-                cur = await db.execute(
-                    "SELECT owner_user_id,chat_id,message_id,date_ts,sender_name,text,is_deleted FROM archived_messages WHERE owner_user_id=? AND text LIKE ? ORDER BY date_ts DESC LIMIT ?",
-                    (owner_id, f"%{query}%", limit),
-                )
+            clauses = []
+            args: list[Any] = []
+            for term in terms:
+                pattern = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+                clauses.append("""(a.text LIKE ? ESCAPE '\\' OR a.sender_name LIKE ? ESCAPE '\\'
+                    OR a.chat_title LIKE ? ESCAPE '\\'
+                    OR EXISTS (SELECT 1 FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id
+                        AND e.chat_id=a.chat_id AND e.message_id=a.message_id
+                        AND (e.old_text LIKE ? ESCAPE '\\' OR e.new_text LIKE ? ESCAPE '\\')))""")
+                args.extend([pattern] * 5)
+            sql = """SELECT a.owner_user_id,a.chat_id,a.message_id,a.date_ts,a.sender_name,a.text,a.is_deleted,a.chat_title,
+                        EXISTS(SELECT 1 FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id
+                          AND e.chat_id=a.chat_id AND e.message_id=a.message_id) AS edited
+                     FROM archived_messages a WHERE """ + " AND ".join(clauses)
+            if owner_id is not None:
+                sql += " AND a.owner_user_id=?"
+                args.append(owner_id)
+            sql += " ORDER BY CASE WHEN lower(a.text) LIKE ? THEN 0 ELSE 1 END, a.date_ts DESC LIMIT ?"
+            args.extend(["%" + query.strip().lower() + "%", min(max(limit, 1), 100)])
+            cur = await db.execute(sql, args)
             return [dict(row) for row in await cur.fetchall()]
 
     async def recent_texts(self, owner_id: int, limit: int = 80) -> list[str]:
