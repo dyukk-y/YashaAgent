@@ -48,7 +48,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
 
     async def queue_notification(message: Message, owner_id: int) -> None:
         """Send a clear, immediate alert and attach the original media when possible."""
-        if not await db.notifications_enabled(owner_id):
+        if not await db.notifications_enabled(owner_id) or not await db.notification_type_enabled(owner_id, "edits"):
             return
         sender = message.from_user
         if sender and sender.id == owner_id:
@@ -428,7 +428,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             "Business deletion event owner=%s chat=%s ids=%s archived_matches=%s",
             owner_id, event.chat.id, len(event.message_ids), len(deleted_rows),
         )
-        if not await db.notifications_enabled(owner_id):
+        if not await db.notifications_enabled(owner_id) or not await db.notification_type_enabled(owner_id, "deletions"):
             return
         if deleted_rows:
             lines = []
