@@ -50,11 +50,12 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
 
     async def send_digest(bot, owner_id: int) -> None:
         try:
-            await asyncio.sleep(60)
+            await asyncio.sleep(await db.notification_interval(owner_id))
             items = pending.pop(owner_id, [])
             if not items or not await db.notifications_enabled(owner_id):
                 return
-            header = f"🔔 Новых сообщений: {len(items)} за последнюю минуту"
+            interval = await db.notification_interval(owner_id)
+            header = f"🔔 Новых сообщений: {len(items)} за последние {interval} сек."
             body = "\n".join(f"• {item}" for item in items[:12])
             if len(items) > 12:
                 body += f"\n…и ещё {len(items) - 12}"
