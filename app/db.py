@@ -475,11 +475,22 @@ class ArchiveDB:
             total, deleted = await cur.fetchone()
             return int(total or 0), int(deleted or 0)
 
+    async def owner_media_paths(self, owner_id: int) -> list[str]:
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(
+                "SELECT stored_path FROM archived_media WHERE owner_user_id=? AND status='stored' AND stored_path != ''",
+                (owner_id,),
+            )
+            return [str(row[0]) for row in await cur.fetchall() if row[0]]
+
     async def forget_owner(self, owner_id: int) -> int:
         async with aiosqlite.connect(self.path) as db:
             cur = await db.execute("SELECT COUNT(*) FROM archived_messages WHERE owner_user_id=?", (owner_id,))
             count = int((await cur.fetchone())[0])
             await db.execute("DELETE FROM archived_message_edits WHERE owner_user_id=?", (owner_id,))
+            await db.execute("DELETE FROM archived_media WHERE owner_user_id=?", (owner_id,))
+            await db.execute("DELETE FROM deleted_message_events WHERE owner_user_id=?", (owner_id,))
+            await db.execute("DELETE FROM hidden_chats WHERE owner_user_id=?", (owner_id,))
             await db.execute("DELETE FROM archived_messages WHERE owner_user_id=?", (owner_id,))
             await db.commit()
             return count
