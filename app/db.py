@@ -582,13 +582,17 @@ class ArchiveDB:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute("""
+                WITH all_chat_rows AS (
+                    SELECT owner_user_id,chat_id,chat_title,date_ts,text,is_deleted FROM archived_messages
+                    UNION ALL SELECT owner_user_id,chat_id,chat_title,date_ts,text,0 AS is_deleted FROM message_buffer
+                )
                 SELECT a.owner_user_id, a.chat_id, MAX(a.chat_title) AS title,
-                       COUNT(*) AS message_count, COALESCE(SUM(a.is_deleted),0) AS deleted_count,
-                       MAX(a.date_ts) AS last_date,
-                       (SELECT x.text FROM archived_messages x WHERE x.owner_user_id=a.owner_user_id AND x.chat_id=a.chat_id ORDER BY x.date_ts DESC LIMIT 1) AS last_text,
+                       (SELECT COUNT(*) FROM archived_messages x WHERE x.owner_user_id=a.owner_user_id AND x.chat_id=a.chat_id) AS message_count,
+                       COALESCE(SUM(a.is_deleted),0) AS deleted_count, MAX(a.date_ts) AS last_date,
+                       (SELECT x.text FROM message_buffer x WHERE x.owner_user_id=a.owner_user_id AND x.chat_id=a.chat_id ORDER BY x.date_ts DESC LIMIT 1) AS last_text,
                        (SELECT COUNT(*) FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id) AS edited_count,
                        EXISTS(SELECT 1 FROM hidden_chats h WHERE h.owner_user_id=a.owner_user_id AND h.chat_id=a.chat_id) AS is_hidden
-                FROM archived_messages a
+                FROM all_chat_rows a
                 GROUP BY a.owner_user_id, a.chat_id
                 ORDER BY last_date DESC
             """)
