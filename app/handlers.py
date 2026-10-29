@@ -79,9 +79,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     @router.message(CommandStart())
     async def start_handler(message: Message) -> None:
         text = (
-            "Привет! Я YashaAgent — архив и управление Telegram Business в одном приложении.\\n\\n"
-            "Открой Mini App: там сообщения, поиск, история изменений и удалений, уведомления и все настройки.\\n\\n"
-            "Чтобы начать архивирование, подключи меня в настройках Telegram Business и разреши чтение сообщений."
+            "YashaAgent — архив удалённых и изменённых сообщений.\\n"
+            "Подключи бота в Telegram Business и открой приложение."
         )
         await message.answer(text, reply_markup=event_markup)
 
