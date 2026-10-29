@@ -370,6 +370,60 @@ button{min-height:40px}
  .layout.mobile-chat-open .conversation.open{min-height:calc(100dvh - 155px)}
 }
 @media(min-width:620px){.layout.split .chat-list{border-right-color:#303030}.layout.split .conversation{height:calc(100dvh - 145px)}}
+
+/* Admin UI refresh: one consistent design layer, accessible controls and clear states. */
+:root{--bg:#0b0d12;--fg:#eef1f8;--card:#121621;--mute:#929bad;--line:#272d3b;--accent:#a9a2ff;--danger:#ff7386;color-scheme:dark}
+html,body{background:var(--bg)!important;color:var(--fg)!important}
+.app{max-width:1440px;padding:18px clamp(14px,2.5vw,34px) 30px!important}
+.top{border-bottom:1px solid var(--line)!important;background:rgba(11,13,18,.9)!important;padding-bottom:16px!important}
+.brand .logo{border:0!important;border-radius:14px!important;background:linear-gradient(145deg,#c8c3ff,#9188f5)!important;color:#111321!important}
+.brand h1{letter-spacing:-.045em}
+.status{border:1px solid var(--line)!important;border-radius:999px!important;background:#121621!important;padding:8px 12px!important}
+.search{border:1px solid var(--line)!important;border-radius:14px!important;background:#121621!important;box-shadow:none!important;overflow:hidden}
+.search:focus-within{border-color:#8e87ee!important;box-shadow:0 0 0 3px #8e87ee20!important}
+.search input{min-height:46px!important;color:var(--fg)!important}
+.tabs{position:sticky;top:0;z-index:8;background:var(--bg)!important;border-bottom:1px solid var(--line)!important;gap:8px!important;padding:12px 0 14px!important}
+.tab,.media-filters button{min-height:42px!important;border:1px solid var(--line)!important;border-radius:11px!important;background:#121621!important;color:#c6ccda!important;padding:9px 14px!important;box-shadow:none!important;transition:background .16s,border-color .16s,transform .16s!important}
+.tab:hover,.media-filters button:hover{border-color:#625d94!important;color:#fff!important}
+.tab.active,.media-filters button.active{background:#c7c2ff!important;color:#141522!important;border-color:#c7c2ff!important;font-weight:750!important}
+.layout{gap:14px!important}
+.chat-row,.event-card,.media-card,.media-stat,.revision,.event-diff,.conversation{background:#11151f!important;border:1px solid var(--line)!important;border-radius:16px!important;box-shadow:none!important}
+.chat-row{margin-bottom:8px!important;overflow:hidden}
+.chat-item,.chat-row .chat-item{border-radius:12px!important}
+.chat-item:hover,.chat-item.selected{background:#1a2030!important}
+.avatar{background:#26283b!important;color:#eeedff!important;border:1px solid #393c57!important}
+.pill{border-radius:7px!important;background:#202538!important;border:1px solid #343b52!important;color:#d9dcf5!important}
+.conversation{padding:14px!important}
+.back{border:1px solid var(--line)!important;border-radius:10px!important;background:#171c29!important}
+.bubble{border:1px solid #30374a!important;border-radius:14px 14px 14px 5px!important;background:#171c29!important;color:var(--fg)!important}
+.bubble.mine{background:#c7c2ff!important;color:#171725!important;border-color:#c7c2ff!important;border-radius:14px 14px 5px 14px!important}
+.event-card{padding:16px!important;transition:border-color .16s,transform .16s!important}
+.event-card:hover{border-color:#7069b3!important;transform:translateY(-1px)}
+.event-body,.event-diff>div{background:#191e2b!important;border-color:#30374a!important;border-radius:10px!important}
+.event-type{border-radius:7px!important}
+.media-dashboard{margin-bottom:12px}
+.media-stats{gap:10px!important}
+.media-stat{padding:15px!important}
+.media-stat strong{font-size:clamp(18px,2vw,25px)!important;letter-spacing:-.04em}
+.media-card{padding:12px!important;gap:9px!important}
+.media-cover{border-radius:12px!important;background:#191e2b!important;border-color:#30374a!important}
+.media-card-actions button,.media-more,.history-btn,.hide-chat{border:1px solid var(--line)!important;border-radius:10px!important;background:#171c29!important;color:var(--fg)!important;min-height:42px!important}
+.media-card-actions button:hover,.media-more:hover,.history-btn:hover,.hide-chat:hover{border-color:#7770bd!important;background:#20253a!important}
+button:disabled{opacity:.45!important;cursor:not-allowed!important}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #aaa3ff!important;outline-offset:3px!important}
+.empty{border:1px dashed #343b4d!important;border-radius:16px!important;background:#11151f!important}
+.spinner{color:#b8b3ff!important}
+@media(max-width:619px){
+ .app{padding:8px 12px 18px!important}
+ .top{padding-top:calc(10px + env(safe-area-inset-top))!important}
+ .tabs{top:0;overflow-x:auto;scrollbar-width:none}
+ .tabs::-webkit-scrollbar{display:none}
+ .tab{flex:0 0 auto}
+ .layout.split .conversation,.conversation{border-radius:14px!important}
+ .media-grid{gap:9px!important}
+ .media-card{padding:9px!important}
+}
+
 </style>
 </head>
 <body>
@@ -448,10 +502,10 @@ const mediaLabels={all:'Все',photo:'Фото',video:'Видео',animation:'G
    mediaKind=kind;if(reset)mediaOffset=0;const list=$('chatList');if(reset)list.innerHTML='<div class="spinner">Загружаю медиатеку…</div>';
    try{const path=(adminMode?'/api/admin/media':'/api/media')+'?kind='+encodeURIComponent(mediaKind)+'&limit=60&offset='+mediaOffset;const data=await api(path);mediaUsage=data.usage||{bytes:0,files:0};mediaLimits=data.limits||{};const items=data.items||[];if(reset)mediaItems=items;else mediaItems=mediaItems.concat(items);renderMedia(items,!reset);mediaOffset+=items.length;if(items.length===60){const more=$('mediaMore');if(more)more.hidden=false}}catch(err){list.innerHTML='<div class="empty error">'+esc(err.message)+'</div>'}
  }
- async function loadAdminChats(){try{const d=await api('/api/admin/chats');adminChats=d.chats||[];adminMode=true;filter='admin';$('tabs').querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));$('adminTab')?.classList.add('active');$('search').placeholder='Все архивы · поиск пока по личному архиву';$('footer').textContent='Админ-архив: главный администратор видит сохранённые диалоги, включая скрытые владельцами. Доступ ограничен ADMIN_USER_IDS.';renderChats()}catch(e){tg?.showAlert?tg.showAlert(e.message):alert(e.message)}}
+ async function loadAdminChats(){try{const d=await api('/api/admin/chats');adminChats=d.chats||[];adminMode=true;filter='admin';$('search').placeholder='Поиск по всем архивам и сообщениям';$('tabs').querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));$('adminTab')?.classList.add('active');$('search').placeholder='Поиск по всем архивам и сообщениям';$('footer').textContent='Админ-архив: главный администратор видит сохранённые диалоги, включая скрытые владельцами. Доступ ограничен ADMIN_USER_IDS.';renderChats()}catch(e){tg?.showAlert?tg.showAlert(e.message):alert(e.message)}}
 async function openChat(id){adminMode=false;activeChat=chats.find(c=>Number(c.chat_id)===id)||{chat_id:id,title:'Диалог'};$('layout').classList.add('mobile-chat-open');$('personName').textContent=activeChat.title||activeChat.name||'Диалог';$('personAvatar').textContent=($('personName').textContent[0]||'?').toUpperCase();$('personSub').textContent='История · '+(activeChat.message_count||0)+' сообщений';$('conversation').classList.add('open');$('layout').classList.add('split');$('footer').classList.add('hide');$('messages').innerHTML='<div class="spinner">Загружаю сообщения…</div>';try{const d=await api('/api/chats/'+id+'/messages');renderMessages(d.messages||[])}catch(e){$('messages').innerHTML='<div class="empty error">'+esc(e.message)+'</div>'}if(filter==='all')renderChats();else if(filter==='media')loadMedia(mediaKind,true);else renderEvents(eventItems,filter)}
 $('back').addEventListener('click',()=>{$('conversation').classList.remove('open');$('layout').classList.remove('split','mobile-chat-open');$('footer').classList.remove('hide');activeChat=null;if(filter==='all'||filter==='admin')renderChats(adminMode?adminChats:chats);else if(filter==='media')loadMedia(mediaKind,true);else renderEvents(eventItems,filter)});
-$('tabs').querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{$('tabs').querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');const keepAdmin=adminMode;filter=b.dataset.filter;$('search').value='';$('conversation').classList.remove('open');$('layout').classList.remove('split','mobile-chat-open');$('footer').classList.remove('hide');activeChat=null;if(filter==='media'){$('search').placeholder='Поиск по имени файла или чату…';loadMedia('all',true)}else if(filter==='all'||filter==='admin'){if(!keepAdmin)$('search').placeholder=keepAdmin?'Все архивы · поиск по сообщениям':'Поиск по сообщениям…';renderChats(keepAdmin?adminChats:chats)}else{$('search').placeholder='Поиск по сообщениям…';loadEvents(filter)}}));
+$('tabs').querySelectorAll('[data-filter]').forEach(b=>b.addEventListener('click',()=>{$('tabs').querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');const keepAdmin=adminMode;filter=b.dataset.filter;$('search').value='';$('conversation').classList.remove('open');$('layout').classList.remove('split','mobile-chat-open');$('footer').classList.remove('hide');activeChat=null;if(filter==='media'){$('search').placeholder='Поиск по имени файла или чату…';loadMedia('all',true)}else if(filter==='all'||filter==='admin'){if(!keepAdmin)$('search').placeholder='Поиск по сообщениям…'; else $('search').placeholder='Поиск по всем архивам и сообщениям';renderChats(keepAdmin?adminChats:chats)}else{$('search').placeholder='Поиск по сообщениям…';loadEvents(filter)}}));
 $('search').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(async()=>{const q=$('search').value.trim();if(filter==='media'){if(!q){loadMedia(mediaKind,true);return}renderMedia(mediaItems.filter(m=>[m.file_name,m.chat_title,m.text,m.media_type].some(v=>String(v||'').toLowerCase().includes(q.toLowerCase()))));return}if(!q){if(filter==='deleted'||filter==='edited'){loadEvents(filter);return}renderChats(adminMode?adminChats:chats);return}try{const d=await api((adminMode?'/api/admin/search':'/api/search')+'?q='+encodeURIComponent(q));const msgs=d.messages||[];$('chatList').innerHTML=msgs.length?msgs.map(m=>'<button class="chat-item" data-chat="'+m.chat_id+'" data-owner="'+Number(m.owner_user_id||0)+'"><div class="avatar">⌕</div><div class="chat-meta"><div class="chat-title">'+esc(m.sender_name||'Сообщение')+'</div><div class="preview">'+esc(m.text||'')+'</div>'+(m.is_deleted?'<span class="pill">Удалено</span>':'')+'</div><div class="right-meta">'+esc(dateLabel(m.date_ts))+'</div></button>').join():'<div class="empty">Ничего не найдено</div>';document.querySelectorAll('[data-chat]').forEach(b=>b.addEventListener('click',()=>adminMode?openAdminChat(Number(b.dataset.owner),Number(b.dataset.chat)):openChat(Number(b.dataset.chat))))}catch(e){$('chatList').innerHTML='<div class="empty error">'+esc(e.message)+'</div>'}},250)});
 
 if(!initData){$('chatList').innerHTML='<div class="empty error"><div class="empty-icon">🔐</div><b>Откройте через Telegram</b><p>Для защиты архива приложение принимает только подписанную сессию Telegram.</p></div>'}else api('/api/me').then(me=>{isAdmin=!!me.is_admin;if(isAdmin){const b=document.createElement('button');b.className='tab';b.id='adminTab';b.textContent='Главный админ · все архивы';b.addEventListener('click',loadAdminChats);$('tabs').appendChild(b)}api('/api/settings').then(d=>{const st=$('connectionStatus'),c=d.connections||{};if(c.connected){st.textContent='● Business подключён';st.classList.add('good');st.title='Подключение активно. Telegram передаёт боту сообщения из разрешённых чатов.'}else{st.textContent='○ Нет подключения';st.classList.add('off');st.title='Подключите бота в настройках Telegram Business'}const sub=$('archiveSub');if(sub)sub.textContent=(d.total_messages||0)+' сообщений в архиве · '+(c.can_reply?'ответы доступны':'только просмотр')}).catch(()=>{});loadChats().then(()=>handleDeepLink())}).catch(()=>loadChats()); 
