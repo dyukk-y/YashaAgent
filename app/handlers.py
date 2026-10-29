@@ -250,7 +250,14 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if not connection_id:
             return
         connection = await db.get_connection(connection_id)
-        if not connection or not connection["is_enabled"] or not connection["can_read_messages"]:
+        if not connection:
+            log.warning("Ignoring business update: unknown connection_id=%s", connection_id)
+            return
+        if not connection["is_enabled"] or not connection["can_read_messages"]:
+            log.warning(
+                "Ignoring business update: connection=%s enabled=%s can_read_messages=%s",
+                connection_id, connection["is_enabled"], connection["can_read_messages"],
+            )
             return
         owner_id = connection["owner_user_id"]
         if await db.owner_archive_enabled(owner_id):
@@ -269,7 +276,14 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if not connection_id:
             return
         connection = await db.get_connection(connection_id)
-        if not connection or not connection["is_enabled"] or not connection["can_read_messages"]:
+        if not connection:
+            log.warning("Ignoring business update: unknown connection_id=%s", connection_id)
+            return
+        if not connection["is_enabled"] or not connection["can_read_messages"]:
+            log.warning(
+                "Ignoring business update: connection=%s enabled=%s can_read_messages=%s",
+                connection_id, connection["is_enabled"], connection["can_read_messages"],
+            )
             return
         owner_id = connection["owner_user_id"]
         previous = await db.get_archived_message(connection_id, message.chat.id, message.message_id)
