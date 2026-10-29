@@ -49,3 +49,15 @@ def test_archive_pause_setting(tmp_path):
         await db.set_archive_enabled(42, True)
         assert await db.owner_archive_enabled(42) is True
     asyncio.run(run())
+
+
+def test_notification_preference_persists(tmp_path):
+    async def run():
+        db = ArchiveDB(str(tmp_path / "archive.sqlite3"))
+        await db.initialize()
+        assert await db.notifications_enabled(42) is True
+        await db.set_notifications_enabled(42, False)
+        assert await db.notifications_enabled(42) is False
+        await db.set_notifications_enabled(42, True)
+        assert await db.notifications_enabled(42) is True
+    asyncio.run(run())
