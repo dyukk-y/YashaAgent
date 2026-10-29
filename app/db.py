@@ -270,8 +270,8 @@ class ArchiveDB:
             db.row_factory = aiosqlite.Row
             placeholders = ",".join("?" for _ in message_ids)
             cur = await db.execute(
-                f"""SELECT message_id,sender_name,text FROM archived_messages WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})
-                    UNION SELECT message_id,sender_name,text FROM message_buffer WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})
+                f"""SELECT message_id,sender_name,text,raw_json FROM archived_messages WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})
+                    UNION SELECT message_id,sender_name,text,raw_json FROM message_buffer WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})
                     ORDER BY message_id""",
                 (connection_id, owner_id, chat_id, *message_ids, connection_id, owner_id, chat_id, *message_ids),
             )
