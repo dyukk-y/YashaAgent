@@ -38,7 +38,7 @@ When AI summaries are enabled, recent archived text is sent to the configured AI
 
 Set `BOT_TOKEN` and `WEBAPP_URL` in `.env`, then run `docker compose up --build -d`. SQLite data is stored in `./data`; protect that directory and back it up securely.
 
-The Mini App must be served through a **public HTTPS domain**. Configure your reverse proxy to forward that domain to port `8080` on this container, then set `WEBAPP_URL=https://your-domain/`. Telegram will not open a Mini App served from plain HTTP. The bot and web API run in the same container; keep port 8080 behind HTTPS rather than exposing sensitive traffic directly.
+The Mini App must be served through a **public HTTPS domain**. Point your domain's DNS to the server, copy `Caddyfile.example` to `Caddyfile`, replace the example domain, and configure Caddy to reverse-proxy to `127.0.0.1:8080`. Then set `WEBAPP_URL=https://your-domain/` in `.env` and restart the service. Telegram will not open a Mini App served from plain HTTP. Port 8080 is bound to localhost so the API is not exposed directly to the public internet.
 
 ## Bot interface
 
