@@ -159,7 +159,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         new_value = not enabled
         await db.set_notifications_enabled(message.from_user.id, new_value)
         status = "включены ✅" if new_value else "выключены 🔕"
-        detail = "Входящие сообщения будут собираться в групповые уведомления примерно раз в минуту." if new_value else "Архив продолжит сохранять доступные сообщения; уведомления отключены."
+        detail = "Новые входящие сообщения собираются в сводки с выбранным интервалом. Изменения и удаления присылаются сразу." if new_value else "Архив продолжит сохранять доступные сообщения; уведомления отключены."
         await message.answer(f"🔔 Уведомления {status}.\n{detail}", reply_markup=menu)
 
     @router.message(F.text == BTN_INTERVAL)
