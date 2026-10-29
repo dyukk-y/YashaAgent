@@ -5,20 +5,22 @@ A consent-first Telegram Business inbox and archive with a responsive Telegram M
 ## Features
 
 - Telegram Bot API polling for Business connection, message, edit, and deletion updates.
-- Responsive Mini App with chat list, message search, archived conversation view, deleted/edited markers, and reply composer.
+- Responsive Telegram Mini App with chat list, message search, archived conversation view, deleted/edited event feeds, edit history, and reply composer.
+- Dedicated media library with type filters, image preview, video/audio playback, document downloads, per-owner storage quota, file-size limits, and retention cleanup.
+- Visual grouping for Telegram media albums when `media_group_id` is available; Business connection/read/reply status in the app header.
 - SQLite archive for accessible text/captions and message metadata, with edit-version history.
 - Immediate Telegram notifications when Telegram reports a business-message edit or deletion.
 - Reply from the Mini App on behalf of the connected Business account when Telegram's `can_reply` right allows it.
 - Button-based menu for archive, search, statistics, AI summary, notification preferences, pause/resume, and archive deletion.
 - Incoming business messages are grouped into a digest roughly once per minute instead of sending one alert per message.
 - Optional AI summaries. AI is disabled unless AI_API_KEY is configured.
-- Docker Compose with persistent local database storage.
+- Docker Compose with persistent database storage and configurable media storage/retention.
 
 ## Privacy and platform limits
 
-YashaAgent does not provide hidden access to another person's account, arbitrary private-chat history, or deleted messages that Telegram does not deliver. Archiving occurs only for an enabled Telegram Business connection when Telegram reports the required read-message right. The owner can pause archiving, toggle grouped notifications, or erase their stored archive from the button menu. Each owner can access only their own archive.
+YashaAgent does not provide hidden access to another person's account, arbitrary private-chat history, or deleted messages that Telegram does not deliver. Archiving occurs only for an enabled Telegram Business connection when Telegram reports the required read-message right. The owner can pause archiving or erase their stored archive from the bot menu. Ordinary users are limited to their own archive; the configured main administrator can review all stored archives and search across them.
 
-When AI summaries are enabled, recent archived text is sent to the configured AI provider for processing. Do not configure an AI key if you do not want message text sent to an external provider. This MVP does not download media files; it stores text, captions, and selected message metadata.
+When AI summaries are enabled through supported bot commands, recent archived text is sent to the configured AI provider for processing. Do not configure an AI key if you do not want message text sent to an external provider. Supported attachments are downloaded when new Business messages arrive and are available in the Mini App media library. Storage settings are `MEDIA_PATH`, `MEDIA_MAX_FILE_MB`, `MEDIA_QUOTA_MB`, and `MEDIA_RETENTION_DAYS`; mount `MEDIA_PATH` on persistent storage in production. Self-destructing media cannot be guaranteed because Telegram may not expose its contents to bots.
 
 ## Run locally
 
