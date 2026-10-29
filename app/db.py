@@ -71,6 +71,11 @@ class ArchiveDB:
                     chat_title TEXT NOT NULL DEFAULT '',
                     PRIMARY KEY(connection_id, chat_id, message_id)
                 );
+                INSERT OR IGNORE INTO deleted_message_events
+                    (connection_id, owner_user_id, chat_id, message_id, deleted_at, chat_title)
+                    SELECT connection_id, owner_user_id, chat_id, message_id,
+                           strftime('%s','now'), chat_title
+                    FROM archived_messages WHERE is_deleted=1;
             """)
             # Safe migrations for existing installations.
             conn_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(business_connections)")).fetchall()}
