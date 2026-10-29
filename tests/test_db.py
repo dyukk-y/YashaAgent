@@ -182,3 +182,28 @@ def test_business_archive_does_not_require_can_read_messages():
     assert connection_allows_archiving({"is_enabled": True, "can_read_messages": False}) is True
     assert connection_allows_archiving({"is_enabled": True, "can_read_messages": True}) is True
     assert connection_allows_archiving({"is_enabled": False, "can_read_messages": True}) is False
+
+
+def test_buffered_messages_are_listed_but_not_permanently_archived_until_event(tmp_path):
+    async def run():
+        db = ArchiveDB(str(tmp_path / "archive.sqlite3"))
+        await db.initialize()
+        await db.save_connection("bc-1", 42, True, True, 100)
+        connection = await db.get_connection("bc-1")
+        message = FakeMessage()
+        await db.buffer_message(connection, message)
+
+        # The chat is visible in the app, but ordinary messages are not in the permanent archive.
+        chats = await db.list_chats(42)
+        assert len(chats) == 1
+        assert chats[0]["chat_id"] == 900
+        assert chats[0]["message_count"] == 0
+        assert await db.chat_messages(42, 900) == []
+        assert (await db.get_archived_messages("bc-1", 900, [3], 42))[0]["text"] == "hello archive"
+
+        # Promote only when an edit/deletion event arrives.
+        await db.promote_buffered_messages("bc-1", 900, [3], 42)
+        assert len(await db.chat_messages(42, 900)) == 1
+        assert await db.get_archived_messages("bc-1", 900, [3], 42)
+
+    asyncio.run(run())
