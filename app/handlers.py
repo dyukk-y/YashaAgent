@@ -8,7 +8,7 @@ from collections import defaultdict
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import (
-    BusinessConnection, BusinessMessagesDeleted, InlineKeyboardButton,
+    BusinessConnection, BusinessMessagesDeleted, CallbackQuery, InlineKeyboardButton,
     InlineKeyboardMarkup, Message, WebAppInfo,
 )
 
@@ -85,13 +85,92 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         )
         await message.answer(text, reply_markup=event_markup)
 
+    def admin_keyboard() -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📊 Обновить статистику", callback_data="adm:stats")],
+            [InlineKeyboardButton(text="👥 Все пользователи", callback_data="adm:users:0"),
+             InlineKeyboardButton(text="🆕 Новые за 7 дней", callback_data="adm:new:0")],
+            [InlineKeyboardButton(text="💬 Все чаты", callback_data="adm:chats:0")],
+            *([[InlineKeyboardButton(text=BTN_APP, web_app=WebAppInfo(url=settings.webapp_url))]] if settings.webapp_url.startswith("https://") else []),
+        ])
+
+    async def admin_dashboard_text() -> str:
+        s = await db.admin_stats()
+        return (
+            "⚙️ ГЛАВНАЯ ПАНЕЛЬ АДМИНИСТРАТОРА\n\n"
+            f"👥 Пользователи в базе: {s['users']}\n"
+            f"🆕 Новые за 7 дней: {s['new_users_7d']}\n"
+            f"🟢 С активным Business: {s['connected']}\n"
+            f"💬 Чаты в архиве: {s['chats']}\n"
+            f"✉️ Сохранённые сообщения: {s['messages']}\n"
+            f"🗑 События удаления: {s['deleted']}\n"
+            f"✏️ Изменения сообщений: {s['edits']}\n"
+            f"📎 Медиафайлы: {s['media']}\n\n"
+            "Выбери раздел ниже или отправь @username, чтобы найти пользователя."
+        )
+
     @router.message(Command("admin"))
     async def admin_handler(message: Message) -> None:
         if not message.from_user or message.from_user.id not in settings.admins:
             await message.answer("Команда доступна только главному администратору.")
             return
         admin_lookup_waiting.add(message.from_user.id)
-        await message.answer("Отправьте @username пользователя. Я найду Business-подключение и покажу, есть ли у него архив. Поиск работает только по пользователям, чей username Telegram был получен при подключении.")
+        await message.answer(await admin_dashboard_text(), reply_markup=admin_keyboard())
+
+    @router.callback_query(lambda query: bool(query.data and query.data.startswith("adm:")))
+    async def admin_dashboard_callback(query: CallbackQuery) -> None:
+        if not query.from_user or query.from_user.id not in settings.admins:
+            await query.answer("Нет доступа", show_alert=True)
+            return
+        await query.answer()
+        action = (query.data or "").split(":")
+        try:
+            if len(action) == 2 and action[1] == "stats":
+                await query.message.edit_text(await admin_dashboard_text(), reply_markup=admin_keyboard())
+                return
+            section = action[1] if len(action) > 1 else "stats"
+            offset = max(0, int(action[2])) if len(action) > 2 else 0
+            if section in {"users", "new"}:
+                users = await db.admin_users(limit=10, offset=offset)
+                if section == "new":
+                    users = [u for u in users if int(u.get("first_seen") or 0) >= int(__import__("time").time()) - 604800]
+                if not users:
+                    text = "Пользователей в этом разделе пока нет."
+                else:
+                    lines = []
+                    for u in users:
+                        username = f"@{u['owner_username']}" if u.get("owner_username") else "без username"
+                        connected = "подключён" if u.get("connected") else "не подключён"
+                        lines.append(f"• {username} · ID {u['owner_user_id']}\n  {connected} · чатов {u['chats']} · сообщений {u['messages']}")
+                    text = ("🆕 НОВЫЕ ПОЛЬЗОВАТЕЛИ" if section == "new" else "👥 ВСЕ ПОЛЬЗОВАТЕЛИ") + f"\nПоказаны {offset + 1}–{offset + len(users)}\n\n" + "\n".join(lines)
+                rows = []
+                if offset > 0:
+                    rows.append(InlineKeyboardButton(text="← Назад", callback_data=f"adm:{section}:{max(0,offset-10)}"))
+                if len(users) == 10:
+                    rows.append(InlineKeyboardButton(text="Дальше →", callback_data=f"adm:{section}:{offset+10}"))
+                keyboard = [rows] if rows else []
+                keyboard.append([InlineKeyboardButton(text="⌂ Панель", callback_data="adm:stats")])
+                await query.message.edit_text(text[:3900], reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+                return
+            if section == "chats":
+                chats = await db.list_chats_admin()
+                page = chats[offset:offset+8]
+                if not page:
+                    text = "В архиве пока нет чатов."
+                else:
+                    lines = [f"• {str(x.get('title') or 'Чат')[:70]}\n  Владелец ID {x['owner_user_id']} · чат {x['chat_id']} · сообщений {x['message_count']}" for x in page]
+                    text = f"💬 ЧАТЫ В АРХИВЕ · {len(chats)} всего\nПоказаны {offset+1}–{offset+len(page)}\n\n" + "\n".join(lines)
+                rows = []
+                if offset > 0:
+                    rows.append(InlineKeyboardButton(text="← Назад", callback_data=f"adm:chats:{max(0,offset-8)}"))
+                if offset + 8 < len(chats):
+                    rows.append(InlineKeyboardButton(text="Дальше →", callback_data=f"adm:chats:{offset+8}"))
+                keyboard = [rows] if rows else []
+                keyboard.append([InlineKeyboardButton(text="⌂ Панель", callback_data="adm:stats")])
+                await query.message.edit_text(text[:3900], reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+        except Exception:
+            log.exception("Admin dashboard callback failed")
+            await query.message.answer("Не удалось загрузить раздел. Попробуйте ещё раз.")
 
     @router.message(lambda message: bool(message.from_user and message.text and message.text.strip().startswith("@")))
     async def admin_username_lookup_handler(message: Message) -> None:
