@@ -47,32 +47,56 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     admin_lookup_waiting: set[int] = set()
 
     async def queue_notification(message: Message, owner_id: int) -> None:
+        """Send a clear, immediate alert and attach the original media when possible."""
         if not await db.notifications_enabled(owner_id):
             return
         sender = message.from_user
         if sender and sender.id == owner_id:
             return
         name = " ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else "Контакт"
-        kind = next((label for attr, label in [
-            ("video_note", "видеокружок"), ("voice", "голосовое сообщение"),
-            ("video", "видео"), ("photo", "фото"), ("animation", "GIF"),
-            ("sticker", "стикер"), ("audio", "аудио"), ("document", "файл"),
-        ] if getattr(message, attr, None)), "")
-        text = message.text or message.caption or (f"Отправлено: {kind}" if kind else "Сообщение без текста")
-        text = " ".join(text.split())
-        if kind and (message.text or message.caption):
-            text = f"{kind.capitalize()}: {text}"
-        if len(text) > 700:
-            text = text[:697] + "…"
-        chat_name = getattr(message.chat, "title", None) or getattr(message.chat, "first_name", None) or "Диалог"
+        chat_name = getattr(message.chat, "title", None) or getattr(message.chat, "first_name", None) or getattr(message.chat, "username", None) or "Личный чат"
+        kind_by_attr = [
+            ("video_note", "видеокружок"), ("voice", "голосовое"), ("video", "видео"),
+            ("photo", "фото"), ("animation", "GIF"), ("sticker", "стикер"),
+            ("audio", "аудио"), ("document", "файл"),
+        ]
+        kind = next((label for attr, label in kind_by_attr if getattr(message, attr, None)), "")
+        body = message.text or message.caption or (f"Отправлено: {kind}" if kind else "Сообщение без текста")
+        body = " ".join(body.split())
+        if len(body) > 850:
+            body = body[:847] + "…"
+        header = f"📩 Новое сообщение · {chat_name}\nОт: {name}"
+        if body and body != "Сообщение без текста":
+            header += f"\n\n{body}"
+        markup = app_markup("Открыть диалог", chat_id=message.chat.id, message_id=message.message_id)
         try:
-            await message.bot.send_message(
-                owner_id,
-                f"💬 Новое сообщение\n{chat_name} · {name}\n\n{text}",
-                reply_markup=app_markup("Открыть", chat_id=message.chat.id, message_id=message.message_id),
-            )
+            # Send the actual attachment immediately instead of a vague text-only alert.
+            if message.video_note:
+                await message.bot.send_message(owner_id, header, disable_web_page_preview=True)
+                await message.bot.send_video_note(owner_id, message.video_note.file_id, reply_markup=markup)
+            elif message.photo:
+                await message.bot.send_photo(owner_id, message.photo[-1].file_id, caption=header[:1024], reply_markup=markup)
+            elif message.video:
+                await message.bot.send_video(owner_id, message.video.file_id, caption=header[:1024], reply_markup=markup)
+            elif message.animation:
+                await message.bot.send_animation(owner_id, message.animation.file_id, caption=header[:1024], reply_markup=markup)
+            elif message.voice:
+                await message.bot.send_voice(owner_id, message.voice.file_id, caption=header[:1024], reply_markup=markup)
+            elif message.audio:
+                await message.bot.send_audio(owner_id, message.audio.file_id, caption=header[:1024], reply_markup=markup)
+            elif message.document:
+                await message.bot.send_document(owner_id, message.document.file_id, caption=header[:1024], reply_markup=markup)
+            elif message.sticker:
+                await message.bot.send_message(owner_id, header, disable_web_page_preview=True)
+                await message.bot.send_sticker(owner_id, message.sticker.file_id, reply_markup=markup)
+            else:
+                await message.bot.send_message(owner_id, header, reply_markup=markup, disable_web_page_preview=True)
         except Exception:
-            log.exception("Could not send message notification to owner=%s", owner_id)
+            log.exception("Could not send message/media notification to owner=%s", owner_id)
+            try:
+                await message.bot.send_message(owner_id, header, reply_markup=markup, disable_web_page_preview=True)
+            except Exception:
+                log.exception("Could not send fallback notification to owner=%s", owner_id)
 
     @router.message(CommandStart())
     async def start_handler(message: Message) -> None:
@@ -335,8 +359,10 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             )
             return
         owner_id = connection["owner_user_id"]
-        previous = await db.get_archived_message(connection_id, message.chat.id, message.message_id)
+        # Edits can arrive before the ordinary-message buffer is flushed.
+        # Promote first so the original version is available for the edit diff.
         await db.promote_buffered_messages(connection_id, message.chat.id, [message.message_id], owner_id)
+        previous = await db.get_archived_message(connection_id, message.chat.id, message.message_id)
         # Edits are the archive's primary event: persist them even if ordinary
         # message buffering has been paused in owner settings.
         await db.save_message(connection, message)
@@ -353,7 +379,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         try:
             await message.bot.send_message(
                 owner_id,
-                f"✏️ Сообщение изменено\nЧат: {chat_name}\nАвтор: {name}\n\nБыло:\n{old_text}\n\nСтало:\n{new_text}",
+                f"✏️ Изменено сообщение · {chat_name}\nАвтор: {name}\n\nБыло:\n{old_text}\n\nСтало:\n{new_text}",
                 reply_markup=app_markup("Посмотреть изменённые", view="edited", chat_id=message.chat.id, message_id=message.message_id),
             )
         except Exception:

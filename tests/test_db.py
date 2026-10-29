@@ -207,3 +207,32 @@ def test_buffered_messages_are_listed_but_not_permanently_archived_until_event(t
         assert await db.list_chats_admin()
 
     asyncio.run(run())
+
+
+def test_edit_events_are_recorded_for_buffered_original(tmp_path):
+    async def run():
+        db = ArchiveDB(str(tmp_path / "archive.sqlite3"))
+        await db.initialize()
+        await db.save_connection("bc-edit", 42, True, True, 100)
+        connection = await db.get_connection("bc-edit")
+
+        original = FakeMessage()
+        original.business_connection_id = "bc-edit"
+        original.message_id = 77
+        original.text = "before edit"
+        await db.buffer_message(connection, original)
+
+        edited = FakeMessage()
+        edited.business_connection_id = "bc-edit"
+        edited.message_id = 77
+        edited.text = "after edit"
+        edited.date = datetime(2026, 1, 1, 0, 5, tzinfo=timezone.utc)
+        await db.promote_buffered_messages("bc-edit", 900, [77], 42)
+        await db.save_message(connection, edited)
+
+        events = await db.list_events(42, "edited")
+        assert len(events) == 1
+        assert events[0]["old_text"] == "before edit"
+        assert events[0]["new_text"] == "after edit"
+
+    asyncio.run(run())

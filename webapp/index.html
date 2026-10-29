@@ -316,6 +316,60 @@ body{background:var(--bg);color:var(--fg)}
   .media-card{padding:8px;border-radius:13px}
   .media-card-actions button{min-height:40px}
 }
+
+/* Mobile-first usability pass: quieter monochrome surfaces, clearer hierarchy and touch targets. */
+:root{--bg:#080808;--fg:#f7f7f7;--card:#141414;--mute:#aaa;--line:#303030;--danger:#ff667d;--violet:#ddd;--accent:#fff;--mint:#d5d5d5;color-scheme:dark}
+body{background:var(--bg);background-image:none}
+.top{background:rgba(8,8,8,.96);border-bottom:1px solid #303030;padding-top:calc(12px + env(safe-area-inset-top))}
+.brand .logo{background:#f7f7f7;color:#080808;box-shadow:none;border-radius:12px}
+.sub,.preview,.right-meta{color:#aaa}
+.status{border-color:#555;color:#f7f7f7;background:#151515}
+.search{background:#111;border-color:#333;box-shadow:none;border-radius:14px}
+.search input{background:transparent;border:0;box-shadow:none!important;min-height:46px}
+.tabs{gap:7px;padding:10px 0 12px;background:var(--bg)}
+.tab,.tab.active{border:1px solid #444;border-radius:999px;box-shadow:none}
+.tab.active{background:#f7f7f7;color:#080808;border-color:#f7f7f7}
+.chat-row{background:#101010;border-color:#282828;border-radius:14px;transform:none!important}
+.chat-row:hover{background:#141414;border-color:#555}
+.chat-item,.chat-row .chat-item{min-height:66px;padding:12px 8px}
+.avatar{background:#e7e7e7;color:#080808;box-shadow:none}
+.pill,.pill.edit{background:#202020;color:#e7e7e7;border-color:#444}
+.conversation{background:#0c0c0c;border-color:#292929;border-radius:16px;padding:0 12px}
+.event-card{width:100%;text-align:left;background:#111;border:1px solid #333;border-radius:15px;padding:15px;margin:0 0 10px;min-height:44px}
+.event-card:active,.chat-item:active,.tab:active{transform:scale(.99)}
+.event-card-top{gap:10px;flex-wrap:wrap}
+.event-chat-title{display:block;font-size:16px;line-height:1.35;margin:9px 0 4px;overflow-wrap:anywhere}
+.event-author{color:#aaa;font-size:12px;overflow-wrap:anywhere}
+.event-body,.event-diff>div{overflow-wrap:anywhere;white-space:pre-wrap;word-break:break-word}
+.event-diff{display:grid;gap:7px;margin-top:12px}
+.event-diff span{font:700 10px "JetBrains Mono",monospace;letter-spacing:.08em;color:#aaa}
+.event-diff>div{border-left:2px solid #555;background:#191919;border-radius:0 9px 9px 0;padding:10px;font-size:14px;line-height:1.5}
+.event-open{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #303030;margin-top:12px;padding-top:10px;font-size:13px;font-weight:700}
+.event-focus{outline:2px solid #fff!important;outline-offset:3px;box-shadow:0 0 0 6px rgba(255,255,255,.12)!important}
+button,input,select,textarea{touch-action:manipulation}
+button{min-height:40px}
+@media(max-width:619px){
+ .app{padding-left:12px;padding-right:12px}
+ .top{padding-left:0;padding-right:0}
+ .brand h1{font-size:16px}
+ .sub{font-size:11px}
+ .search{margin-top:12px}
+ .search input{font-size:16px;padding:11px 13px}
+ .tabs{position:sticky;top:0;z-index:8;overflow-x:auto;overscroll-behavior-x:contain;padding:9px 0;background:var(--bg)}
+ .tab{flex:0 0 auto;min-height:42px;padding:9px 13px;font-size:12px}
+ .layout{gap:0}
+ .chat-list{padding:10px 0}
+ .event-feed-head{position:sticky;top:54px;z-index:2;background:var(--bg);padding:8px 0}
+ .event-card{padding:14px 12px}
+ .event-body{font-size:14px;line-height:1.55}
+ .conversation{border-radius:12px;padding:0 10px}
+ .backbar{position:sticky;top:0;z-index:4;background:#0c0c0c}
+ .messages{padding:12px 0 calc(20px + env(safe-area-inset-bottom))}
+ .bubble{max-width:96%;font-size:15px}
+ .media-open,.history-btn,.back,.hide-chat{min-height:44px}
+ .layout.mobile-chat-open .conversation.open{min-height:calc(100dvh - 155px)}
+}
+@media(min-width:620px){.layout.split .chat-list{border-right-color:#303030}.layout.split .conversation{height:calc(100dvh - 145px)}}
 </style>
 </head>
 <body>
@@ -339,7 +393,7 @@ const api=async(path,opts={})=>{const res=await fetch(path,{...opts,headers:{'Co
 const dateLabel=ts=>{if(!ts)return '';const d=new Date(ts*1000);return d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'})};
 const timeLabel=ts=>ts?new Date(ts*1000).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'';
 function focusMessage(messageId){if(!messageId)return;setTimeout(()=>{const target=$('message-'+Number(messageId));if(target){target.scrollIntoView({behavior:'smooth',block:'center'});target.classList.add('event-focus');setTimeout(()=>target.classList.remove('event-focus'),2600)}},180)}
-function handleDeepLink(){const params=new URLSearchParams(window.location.search);const chatId=Number(params.get('chat_id'));const messageId=Number(params.get('message_id'));if(!chatId)return;const view=params.get('view');if(view==='deleted'||view==='edited'){filter=view;$('tabs').querySelectorAll('.tab').forEach(b=>{b.classList.toggle('active',b.dataset.filter===view)});}openChat(chatId).then(()=>focusMessage(messageId))}
+async function handleDeepLink(){const params=new URLSearchParams(window.location.search);const chatId=Number(params.get('chat_id'));const messageId=Number(params.get('message_id'));if(!chatId)return;const view=params.get('view');if(view==='deleted'||view==='edited'){filter=view;$('tabs').querySelectorAll('.tab').forEach(b=>{b.classList.toggle('active',b.dataset.filter===view)});await loadEvents(view)}await openChat(chatId);if(messageId)focusMessage(messageId)}
 function renderChats(items){items=items||(adminMode?adminChats:chats);const list=$('chatList');if(!items.length){list.innerHTML='<div class="empty"><div class="empty-icon">🫧</div><b>Пока здесь пусто</b><p>Диалоги появятся после получения сообщений через подключение Telegram Business.</p></div>';return}
 list.innerHTML=items.map(c=>{const name=c.title||c.name||('Чат '+c.chat_id);const mark=(c.deleted_count?'<span class="pill">🗑 '+c.deleted_count+' удал.</span>':'')+(c.edited_count?'<span class="pill edit">✎ '+c.edited_count+' измен.</span>':'')+(adminMode&&c.is_hidden?'<span class="pill">Скрыт владельцем</span>':'');const owner=adminMode?'<div class="preview">Владелец ID: '+esc(c.owner_user_id)+'</div>':'';return '<div class="chat-row"><button class="chat-item '+(activeChat&&Number(activeChat.chat_id)===Number(c.chat_id)&&(!adminMode||Number(activeChat.owner_user_id)===Number(c.owner_user_id))?'selected':'')+'" data-chat="'+c.chat_id+'" data-owner="'+(adminMode?c.owner_user_id:'')+'"><div class="avatar">'+esc((name.trim()[0]||'?').toUpperCase())+'</div><div class="chat-meta"><div class="chat-title">'+esc(name)+'</div>'+owner+'<div class="preview">'+esc(c.last_text||'Нет текста')+'</div>'+mark+'</div><div class="right-meta">'+esc(dateLabel(c.last_date))+'<br>'+esc(c.message_count||0)+' msg</div><span class="chat-chevron">›</span></button></div>'}).join('');
 list.querySelectorAll('[data-chat]').forEach(b=>b.addEventListener('click',()=>adminMode?openAdminChat(Number(b.dataset.owner),Number(b.dataset.chat)):openChat(Number(b.dataset.chat))));
