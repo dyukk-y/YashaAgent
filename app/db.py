@@ -343,10 +343,10 @@ class ArchiveDB:
             await db.commit()
             return int(row[0])
 
-    async def update_media_record(self, media_id: int, stored_path: str = "", status: str = "stored", error: str = "") -> None:
+    async def update_media_record(self, media_id: int, stored_path: str = "", status: str = "stored", error: str = "", file_size: int | None = None) -> None:
         async with aiosqlite.connect(self.path) as db:
-            await db.execute("UPDATE archived_media SET stored_path=?, status=?, error=? WHERE id=?",
-                             (stored_path, status, error[:500], media_id))
+            await db.execute("UPDATE archived_media SET stored_path=?, status=?, error=?, file_size=COALESCE(?,file_size) WHERE id=?",
+                             (stored_path, status, error[:500], file_size, media_id))
             await db.commit()
 
     async def message_media(self, owner_id: int, chat_id: int, message_id: int) -> list[dict[str, Any]]:
