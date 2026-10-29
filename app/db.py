@@ -17,10 +17,16 @@ class ArchiveDB:
                 CREATE TABLE IF NOT EXISTS business_connections (
                     connection_id TEXT PRIMARY KEY,
                     owner_user_id INTEGER NOT NULL,
+                    owner_username TEXT NOT NULL DEFAULT '',
                     is_enabled INTEGER NOT NULL DEFAULT 0,
                     can_read_messages INTEGER NOT NULL DEFAULT 0,
                     can_reply INTEGER NOT NULL DEFAULT 0,
                     updated_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS admin_user_registry (
+                    owner_user_id INTEGER PRIMARY KEY,
+                    owner_username TEXT NOT NULL DEFAULT '',
+                    first_seen INTEGER NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS owner_settings (
                     owner_user_id INTEGER PRIMARY KEY,
@@ -107,6 +113,8 @@ class ArchiveDB:
             conn_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(business_connections)")).fetchall()}
             if "can_reply" not in conn_columns:
                 await db.execute("ALTER TABLE business_connections ADD COLUMN can_reply INTEGER NOT NULL DEFAULT 0")
+            if "owner_username" not in conn_columns:
+                await db.execute("ALTER TABLE business_connections ADD COLUMN owner_username TEXT NOT NULL DEFAULT ''")
             archive_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(archived_messages)")).fetchall()}
             if "chat_title" not in archive_columns:
                 await db.execute("ALTER TABLE archived_messages ADD COLUMN chat_title TEXT NOT NULL DEFAULT ''")
@@ -119,7 +127,72 @@ class ArchiveDB:
             media_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(archived_media)")).fetchall()}
             if "media_group_id" not in media_columns:
                 await db.execute("ALTER TABLE archived_media ADD COLUMN media_group_id TEXT NOT NULL DEFAULT ''")
+            await db.execute("""INSERT OR IGNORE INTO admin_user_registry(owner_user_id, owner_username, first_seen)
+                SELECT owner_user_id, MAX(owner_username), MIN(updated_at) FROM business_connections GROUP BY owner_user_id""")
             await db.commit()
+
+    async def register_admin_user(self, owner_id: int, username: str = "", seen_at: int | None = None) -> None:
+        import time
+        timestamp = int(seen_at or time.time())
+        normalized = username.strip().lstrip("@").lower()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("""INSERT INTO admin_user_registry(owner_user_id, owner_username, first_seen) VALUES(?,?,?)
+                ON CONFLICT(owner_user_id) DO UPDATE SET
+                owner_username=CASE WHEN excluded.owner_username!='' THEN excluded.owner_username ELSE admin_user_registry.owner_username END""",
+                (owner_id, normalized, timestamp))
+            await db.commit()
+
+    async def admin_stats(self) -> dict[str, int]:
+        async with aiosqlite.connect(self.path) as db:
+            stats = {}
+            queries = {
+                "users": "SELECT COUNT(*) FROM admin_user_registry",
+                "connected": "SELECT COUNT(DISTINCT owner_user_id) FROM business_connections WHERE is_enabled=1",
+                "chats": "SELECT COUNT(*) FROM (SELECT owner_user_id,chat_id FROM archived_messages UNION SELECT owner_user_id,chat_id FROM message_buffer)",
+                "messages": "SELECT COUNT(*) FROM archived_messages",
+                "deleted": "SELECT COUNT(*) FROM deleted_message_events",
+                "edits": "SELECT COUNT(*) FROM archived_message_edits",
+                "media": "SELECT COUNT(*) FROM archived_media",
+                "new_users_7d": "SELECT COUNT(*) FROM admin_user_registry WHERE first_seen >= strftime('%s','now') - 604800",
+            }
+            for key, query in queries.items():
+                stats[key] = int((await (await db.execute(query)).fetchone())[0] or 0)
+            return stats
+
+    async def admin_users(self, limit: int = 15, offset: int = 0) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute("""
+                SELECT u.owner_user_id, u.owner_username, u.first_seen,
+                    MAX(COALESCE(c.is_enabled,0)) AS connected,
+                    COUNT(DISTINCT c.connection_id) AS connections,
+                    (SELECT COUNT(DISTINCT a.chat_id) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS chats,
+                    (SELECT COUNT(*) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS messages
+                FROM admin_user_registry u LEFT JOIN business_connections c ON c.owner_user_id=u.owner_user_id
+                GROUP BY u.owner_user_id, u.owner_username, u.first_seen
+                ORDER BY u.first_seen DESC LIMIT ? OFFSET ?
+            """, (limit, offset))
+            return [dict(row) for row in await cur.fetchall()]
+
+    async def admin_new_users(self, limit: int = 10, offset: int = 0) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute("""
+                SELECT u.owner_user_id, u.owner_username, u.first_seen,
+                    MAX(COALESCE(c.is_enabled,0)) AS connected,
+                    COUNT(DISTINCT c.connection_id) AS connections,
+                    (SELECT COUNT(DISTINCT a.chat_id) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS chats,
+                    (SELECT COUNT(*) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS messages
+                FROM admin_user_registry u LEFT JOIN business_connections c ON c.owner_user_id=u.owner_user_id
+                WHERE u.first_seen >= strftime('%s','now') - 604800
+                GROUP BY u.owner_user_id, u.owner_username, u.first_seen
+                ORDER BY u.first_seen DESC LIMIT ? OFFSET ?
+            """, (limit, offset))
+            return [dict(row) for row in await cur.fetchall()]
+
+    async def admin_user_count(self) -> int:
+        async with aiosqlite.connect(self.path) as db:
+            return int((await (await db.execute("SELECT COUNT(*) FROM admin_user_registry")).fetchone())[0] or 0)
 
     async def owner_connections(self, owner_id: int) -> list[dict[str, Any]]:
         async with aiosqlite.connect(self.path) as db:
@@ -137,14 +210,39 @@ class ArchiveDB:
             "interval_seconds": await self.notification_interval(owner_id),
         }
 
-    async def save_connection(self, connection_id: str, owner_id: int, enabled: bool, can_read: bool, updated_at: int, can_reply: bool = False) -> None:
+    async def save_connection(self, connection_id: str, owner_id: int, enabled: bool, can_read: bool, updated_at: int, can_reply: bool = False, owner_username: str = "") -> None:
         async with aiosqlite.connect(self.path) as db:
-            await db.execute("""INSERT INTO business_connections(connection_id, owner_user_id, is_enabled, can_read_messages, can_reply, updated_at)
-                VALUES(?,?,?,?,?,?) ON CONFLICT(connection_id) DO UPDATE SET owner_user_id=excluded.owner_user_id,
-                is_enabled=excluded.is_enabled, can_read_messages=excluded.can_read_messages, can_reply=excluded.can_reply, updated_at=excluded.updated_at""",
-                (connection_id, owner_id, int(enabled), int(can_read), int(can_reply), updated_at))
+            await db.execute("""INSERT INTO business_connections(connection_id, owner_user_id, owner_username, is_enabled, can_read_messages, can_reply, updated_at)
+                VALUES(?,?,?,?,?,?,?) ON CONFLICT(connection_id) DO UPDATE SET owner_user_id=excluded.owner_user_id,
+                owner_username=excluded.owner_username, is_enabled=excluded.is_enabled, can_read_messages=excluded.can_read_messages, can_reply=excluded.can_reply, updated_at=excluded.updated_at""",
+                (connection_id, owner_id, owner_username.lstrip("@").lower(), int(enabled), int(can_read), int(can_reply), updated_at))
             await db.execute("INSERT OR IGNORE INTO owner_settings(owner_user_id, archive_enabled, notifications_enabled) VALUES(?,1,1)", (owner_id,))
+            await db.execute("""INSERT INTO admin_user_registry(owner_user_id, owner_username, first_seen) VALUES(?,?,?)
+                ON CONFLICT(owner_user_id) DO UPDATE SET owner_username=CASE WHEN excluded.owner_username!='' THEN excluded.owner_username ELSE admin_user_registry.owner_username END""",
+                (owner_id, owner_username.lstrip("@").lower(), updated_at))
             await db.commit()
+
+    async def find_owner_by_username(self, username: str) -> dict[str, Any] | None:
+        username = username.strip().lstrip("@").lower()
+        if not username:
+            return None
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            row = await (await db.execute(
+                """SELECT owner_user_id, owner_username, MAX(is_enabled) AS connected,
+                          COUNT(DISTINCT connection_id) AS connections
+                   FROM business_connections WHERE lower(owner_username)=?
+                   GROUP BY owner_user_id, owner_username ORDER BY connected DESC LIMIT 1""",
+                (username,),
+            )).fetchone()
+            if not row:
+                return None
+            result = dict(row)
+            result["chat_count"] = int((await (await db.execute(
+                "SELECT COUNT(DISTINCT chat_id) FROM archived_messages WHERE owner_user_id=?",
+                (result["owner_user_id"],),
+            )).fetchone())[0] or 0)
+            return result
 
     async def get_connection(self, connection_id: str) -> dict[str, Any] | None:
         async with aiosqlite.connect(self.path) as db:
@@ -235,15 +333,28 @@ class ArchiveDB:
         date_ts = int(message.date.timestamp())
         edited_ts = int((getattr(message, "edit_date", None) or message.date).timestamp())
         async with aiosqlite.connect(self.path) as db:
+            # The first version may still be in the short-lived message buffer.
+            # Check both stores before upserting the edited payload, otherwise the
+            # first edit can replace the original without creating an edit event.
             existing = await (await db.execute(
-                "SELECT text FROM archived_messages WHERE connection_id=? AND chat_id=? AND message_id=?",
-                (connection["connection_id"], chat.id, message.message_id),
+                """SELECT text FROM archived_messages WHERE connection_id=? AND chat_id=? AND message_id=?
+                   UNION ALL
+                   SELECT text FROM message_buffer WHERE connection_id=? AND chat_id=? AND message_id=?
+                   LIMIT 1""",
+                (connection["connection_id"], chat.id, message.message_id,
+                 connection["connection_id"], chat.id, message.message_id),
             )).fetchone()
-            if existing and existing[0] != text:
+            if existing and (existing[0] or "") != text:
                 await db.execute(
-                    "INSERT INTO archived_message_edits(connection_id,chat_id,message_id,owner_user_id,old_text,new_text,edited_at) VALUES(?,?,?,?,?,?,?)",
-                    (connection["connection_id"], chat.id, message.message_id, connection["owner_user_id"], existing[0], text, edited_ts),
+                    """INSERT INTO archived_message_edits
+                       (connection_id,chat_id,message_id,owner_user_id,old_text,new_text,edited_at)
+                       VALUES(?,?,?,?,?,?,?)""",
+                    (connection["connection_id"], chat.id, message.message_id, connection["owner_user_id"],
+                     existing[0] or "", text, edited_ts),
                 )
+            # Remove the buffered original after the edit is captured.
+            await db.execute("DELETE FROM message_buffer WHERE connection_id=? AND chat_id=? AND message_id=?",
+                             (connection["connection_id"], chat.id, message.message_id))
             await db.execute("""INSERT INTO archived_messages(connection_id, owner_user_id, chat_id, message_id, date_ts, sender_user_id, sender_name, text, chat_title, raw_json)
                 VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(connection_id, chat_id, message_id) DO UPDATE SET
                 date_ts=excluded.date_ts, sender_user_id=excluded.sender_user_id, sender_name=excluded.sender_name,
@@ -317,10 +428,14 @@ class ArchiveDB:
                 args.append(limit)
             else:
                 sql = """SELECT e.owner_user_id, e.chat_id, e.message_id, e.edited_at AS event_ts,
-                                a.date_ts, a.sender_name, a.text, a.chat_title, a.raw_json,
-                                a.is_deleted, e.old_text, e.new_text
+                                COALESCE(a.date_ts, e.edited_at) AS date_ts,
+                                COALESCE(a.sender_name, '') AS sender_name,
+                                COALESCE(a.text, e.new_text) AS text,
+                                COALESCE(a.chat_title, '') AS chat_title,
+                                COALESCE(a.raw_json, '{}') AS raw_json,
+                                COALESCE(a.is_deleted, 0) AS is_deleted, e.old_text, e.new_text
                          FROM archived_message_edits e
-                         JOIN archived_messages a ON a.owner_user_id=e.owner_user_id
+                         LEFT JOIN archived_messages a ON a.owner_user_id=e.owner_user_id
                            AND a.chat_id=e.chat_id AND a.message_id=e.message_id"""
                 args = []
                 if owner_id is not None:

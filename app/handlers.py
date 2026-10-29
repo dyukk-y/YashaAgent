@@ -2,13 +2,14 @@ import asyncio
 import logging
 import json
 import re
+from urllib.parse import urlencode, urlsplit, urlunsplit, parse_qsl
 from pathlib import Path
 from collections import defaultdict
 
 from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import (
-    BusinessConnection, BusinessMessagesDeleted, InlineKeyboardButton,
+    BusinessConnection, BusinessMessagesDeleted, CallbackQuery, InlineKeyboardButton,
     InlineKeyboardMarkup, Message, WebAppInfo,
 )
 
@@ -17,7 +18,7 @@ from app.db import ArchiveDB
 
 log = logging.getLogger(__name__)
 
-BTN_APP = "📂 Открыть YashaAgent"
+BTN_APP = "Открыть"
 
 
 def connection_allows_archiving(connection: dict) -> bool:
@@ -31,35 +32,19 @@ def connection_allows_archiving(connection: dict) -> bool:
 
 def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     router = Router()
-    event_markup = (
-        InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=BTN_APP, web_app=WebAppInfo(url=settings.webapp_url))
+    def app_markup(label: str = BTN_APP, **params) -> InlineKeyboardMarkup | None:
+        if not settings.webapp_url.startswith("https://"):
+            return None
+        parts = urlsplit(settings.webapp_url)
+        query = dict(parse_qsl(parts.query, keep_blank_values=True))
+        query.update({key: str(value) for key, value in params.items() if value is not None})
+        url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
+        return InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text=label, web_app=WebAppInfo(url=url))
         ]])
-        if settings.webapp_url.startswith("https://")
-        else None
-    )
-    pending: dict[int, list[str]] = defaultdict(list)
-    digest_tasks: dict[int, asyncio.Task] = {}
 
-    async def send_digest(bot, owner_id: int) -> None:
-        try:
-            await asyncio.sleep(await db.notification_interval(owner_id))
-            items = pending.pop(owner_id, [])
-            if not items or not await db.notifications_enabled(owner_id):
-                return
-            interval = await db.notification_interval(owner_id)
-            header = f"🔔 Новых сообщений: {len(items)} за последние {interval} сек."
-            body = "\n".join(f"• {item}" for item in items[:12])
-            if len(items) > 12:
-                body += f"\n…и ещё {len(items) - 12}"
-            await bot.send_message(owner_id, f"{header}\n\n{body}"[:3900], reply_markup=event_markup)
-        except Exception:
-            log.exception("Could not send grouped message digest to owner=%s", owner_id)
-        finally:
-            digest_tasks.pop(owner_id, None)
-            # If new messages arrived while the digest was being sent, schedule another batch.
-            if pending.get(owner_id):
-                digest_tasks[owner_id] = asyncio.create_task(send_digest(bot, owner_id))
+    event_markup = app_markup()
+    admin_lookup_waiting: set[int] = set()
 
     async def queue_notification(message: Message, owner_id: int) -> None:
         if not await db.notifications_enabled(owner_id):
@@ -68,21 +53,146 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if sender and sender.id == owner_id:
             return
         name = " ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else "Контакт"
-        text = message.text or message.caption or "📎 Сообщение без текста"
+        kind = next((label for attr, label in [
+            ("video_note", "видеокружок"), ("voice", "голосовое сообщение"),
+            ("video", "видео"), ("photo", "фото"), ("animation", "GIF"),
+            ("sticker", "стикер"), ("audio", "аудио"), ("document", "файл"),
+        ] if getattr(message, attr, None)), "")
+        text = message.text or message.caption or (f"Отправлено: {kind}" if kind else "Сообщение без текста")
         text = " ".join(text.split())
-        if len(text) > 180:
-            text = text[:177] + "…"
-        pending[owner_id].append(f"{name}: {text}")
-        if owner_id not in digest_tasks:
-            digest_tasks[owner_id] = asyncio.create_task(send_digest(message.bot, owner_id))
+        if kind and (message.text or message.caption):
+            text = f"{kind.capitalize()}: {text}"
+        if len(text) > 700:
+            text = text[:697] + "…"
+        chat_name = getattr(message.chat, "title", None) or getattr(message.chat, "first_name", None) or "Диалог"
+        try:
+            await message.bot.send_message(
+                owner_id,
+                f"💬 Новое сообщение\n{chat_name} · {name}\n\n{text}",
+                reply_markup=app_markup("Открыть", chat_id=message.chat.id, message_id=message.message_id),
+            )
+        except Exception:
+            log.exception("Could not send message notification to owner=%s", owner_id)
 
     @router.message(CommandStart())
     async def start_handler(message: Message) -> None:
+        if message.from_user:
+            await db.register_admin_user(message.from_user.id, message.from_user.username or "")
         text = (
             "YashaAgent — архив удалённых и изменённых сообщений.\\n"
             "Подключи бота в Telegram Business и открой приложение."
         )
         await message.answer(text, reply_markup=event_markup)
+
+    def admin_keyboard() -> InlineKeyboardMarkup:
+        return InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📊 Обновить статистику", callback_data="adm:stats")],
+            [InlineKeyboardButton(text="👥 Все пользователи", callback_data="adm:users:0"),
+             InlineKeyboardButton(text="🆕 Новые за 7 дней", callback_data="adm:new:0")],
+            [InlineKeyboardButton(text="💬 Все чаты", callback_data="adm:chats:0")],
+            *([[InlineKeyboardButton(text=BTN_APP, web_app=WebAppInfo(url=settings.webapp_url))]] if settings.webapp_url.startswith("https://") else []),
+        ])
+
+    async def admin_dashboard_text() -> str:
+        s = await db.admin_stats()
+        return (
+            "⚙️ ГЛАВНАЯ ПАНЕЛЬ АДМИНИСТРАТОРА\n\n"
+            f"👥 Пользователи в базе: {s['users']}\n"
+            f"🆕 Новые за 7 дней: {s['new_users_7d']}\n"
+            f"🟢 С активным Business: {s['connected']}\n"
+            f"💬 Чаты в архиве: {s['chats']}\n"
+            f"✉️ Сохранённые сообщения: {s['messages']}\n"
+            f"🗑 События удаления: {s['deleted']}\n"
+            f"✏️ Изменения сообщений: {s['edits']}\n"
+            f"📎 Медиафайлы: {s['media']}\n\n"
+            "Выбери раздел ниже или отправь @username, чтобы найти пользователя."
+        )
+
+    @router.message(Command("admin"))
+    async def admin_handler(message: Message) -> None:
+        if not message.from_user or message.from_user.id not in settings.admins:
+            await message.answer("Команда доступна только главному администратору.")
+            return
+        admin_lookup_waiting.add(message.from_user.id)
+        await message.answer(await admin_dashboard_text(), reply_markup=admin_keyboard())
+
+    @router.callback_query(lambda query: bool(query.data and query.data.startswith("adm:")))
+    async def admin_dashboard_callback(query: CallbackQuery) -> None:
+        if not query.from_user or query.from_user.id not in settings.admins:
+            await query.answer("Нет доступа", show_alert=True)
+            return
+        await query.answer()
+        action = (query.data or "").split(":")
+        try:
+            if len(action) == 2 and action[1] == "stats":
+                await query.message.edit_text(await admin_dashboard_text(), reply_markup=admin_keyboard())
+                return
+            section = action[1] if len(action) > 1 else "stats"
+            offset = max(0, int(action[2])) if len(action) > 2 else 0
+            if section in {"users", "new"}:
+                users = await (db.admin_new_users(limit=10, offset=offset) if section == "new" else db.admin_users(limit=10, offset=offset))
+                if not users:
+                    text = "Пользователей в этом разделе пока нет."
+                else:
+                    lines = []
+                    for u in users:
+                        username = f"@{u['owner_username']}" if u.get("owner_username") else "без username"
+                        connected = "подключён" if u.get("connected") else "не подключён"
+                        lines.append(f"• {username} · ID {u['owner_user_id']}\n  {connected} · чатов {u['chats']} · сообщений {u['messages']}")
+                    text = ("🆕 НОВЫЕ ПОЛЬЗОВАТЕЛИ" if section == "new" else "👥 ВСЕ ПОЛЬЗОВАТЕЛИ") + f"\nПоказаны {offset + 1}–{offset + len(users)}\n\n" + "\n".join(lines)
+                rows = []
+                if offset > 0:
+                    rows.append(InlineKeyboardButton(text="← Назад", callback_data=f"adm:{section}:{max(0,offset-10)}"))
+                if len(users) == 10:
+                    rows.append(InlineKeyboardButton(text="Дальше →", callback_data=f"adm:{section}:{offset+10}"))
+                keyboard = [rows] if rows else []
+                keyboard.append([InlineKeyboardButton(text="⌂ Панель", callback_data="adm:stats")])
+                await query.message.edit_text(text[:3900], reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+                return
+            if section == "chats":
+                chats = await db.list_chats_admin()
+                page = chats[offset:offset+8]
+                if not page:
+                    text = "В архиве пока нет чатов."
+                else:
+                    lines = [f"• {str(x.get('title') or 'Чат')[:70]}\n  Владелец ID {x['owner_user_id']} · чат {x['chat_id']} · сообщений {x['message_count']}" for x in page]
+                    text = f"💬 ЧАТЫ В АРХИВЕ · {len(chats)} всего\nПоказаны {offset+1}–{offset+len(page)}\n\n" + "\n".join(lines)
+                rows = []
+                if offset > 0:
+                    rows.append(InlineKeyboardButton(text="← Назад", callback_data=f"adm:chats:{max(0,offset-8)}"))
+                if offset + 8 < len(chats):
+                    rows.append(InlineKeyboardButton(text="Дальше →", callback_data=f"adm:chats:{offset+8}"))
+                keyboard = [rows] if rows else []
+                keyboard.append([InlineKeyboardButton(text="⌂ Панель", callback_data="adm:stats")])
+                await query.message.edit_text(text[:3900], reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+        except Exception:
+            log.exception("Admin dashboard callback failed")
+            await query.message.answer("Не удалось загрузить раздел. Попробуйте ещё раз.")
+
+    @router.message(lambda message: bool(message.from_user and message.text and message.text.strip().startswith("@")))
+    async def admin_username_lookup_handler(message: Message) -> None:
+        if not message.from_user or message.from_user.id not in admin_lookup_waiting:
+            return
+        if message.from_user.id not in settings.admins:
+            admin_lookup_waiting.discard(message.from_user.id)
+            return
+        username = message.text.strip().split()[0].lstrip("@")
+        if not re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
+            await message.answer("Укажите корректный @username Telegram.")
+            return
+        result = await db.find_owner_by_username(username)
+        admin_lookup_waiting.discard(message.from_user.id)
+        if not result:
+            await message.answer("Пользователь не найден среди сохранённых Business-подключений. Он должен подключить бота, а Telegram должен передать его username.")
+            return
+        await message.answer(
+            f"Найден @{result.get('owner_username') or username}\\n"
+            f"Telegram ID: {result['owner_user_id']}\\n"
+            f"Активное подключение: {'да' if result['connected'] else 'нет'}\\n"
+            f"Диалогов в архиве: {result['chat_count']}\\n\\n"
+            "Откройте Mini App кнопкой ниже: в админ-режиме доступны архивы пользователей.",
+            reply_markup=event_markup,
+        )
 
     @router.business_connection()
     async def business_connection_handler(connection: BusinessConnection) -> None:
@@ -90,7 +200,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         can_read = bool(rights and getattr(rights, "can_read_messages", False))
         can_reply = bool(rights and getattr(rights, "can_reply", False))
         await db.save_connection(connection_id=connection.id, owner_id=connection.user.id,
-            enabled=connection.is_enabled, can_read=can_read, can_reply=can_reply, updated_at=int(connection.date.timestamp()))
+            enabled=connection.is_enabled, can_read=can_read, can_reply=can_reply, updated_at=int(connection.date.timestamp()), owner_username=getattr(connection.user, 'username', '') or '')
         log.info("Business connection updated: owner=%s enabled=%s can_read=%s can_reply=%s", connection.user.id, connection.is_enabled, can_read, can_reply)
 
     def extract_media(message: Message) -> dict | None:
@@ -244,7 +354,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             await message.bot.send_message(
                 owner_id,
                 f"✏️ Сообщение изменено\nЧат: {chat_name}\nАвтор: {name}\n\nБыло:\n{old_text}\n\nСтало:\n{new_text}",
-                reply_markup=event_markup,
+                reply_markup=app_markup("Посмотреть изменённые", view="edited", chat_id=message.chat.id, message_id=message.message_id),
             )
         except Exception:
             log.exception("Could not send edit alert to owner=%s", owner_id)
@@ -292,7 +402,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             await event.bot.send_message(
                 owner_id,
                 f"🗑 Сообщение удалено\nЧат: {chat_name}\nУдалений в событии: {len(event.message_ids)}\n\n{body}"[:3900],
-                reply_markup=event_markup,
+                reply_markup=app_markup("Посмотреть удалённые", view="deleted", chat_id=event.chat.id, message_id=(event.message_ids[0] if event.message_ids else None)),
             )
         except Exception:
             log.exception("Could not send deletion alert to owner=%s", owner_id)
