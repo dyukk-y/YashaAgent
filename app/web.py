@@ -47,6 +47,9 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
     api.state.bot_token = bot_token
     api.state.admin_ids = set(admin_ids or set())
     api.state.media_root = Path(media_root).resolve()
+    api.state.media_max_file_mb = 20
+    api.state.media_quota_mb = 1024
+    api.state.media_retention_days = 365
     api.state.ai_api_key = ""
     api.state.ai_model = "gpt-4.1-mini"
 
@@ -133,6 +136,12 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
         total, deleted = await db.stats(owner_id)
         settings["total_messages"] = total
         settings["deleted_messages"] = deleted
+        settings["media_usage"] = await db.media_usage(owner_id)
+        settings["media_limits"] = {
+            "max_file_mb": request.app.state.media_max_file_mb,
+            "quota_mb": request.app.state.media_quota_mb,
+            "retention_days": request.app.state.media_retention_days,
+        }
         return settings
 
     class SettingsBody(BaseModel):
