@@ -33,10 +33,6 @@ BTN_FORGET = "🗑 Очистить архив"
 MENU = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text=BTN_ARCHIVE), KeyboardButton(text=BTN_SEARCH)],
-        [KeyboardButton(text=BTN_STATS), KeyboardButton(text=BTN_SUMMARY)],
-        [KeyboardButton(text=BTN_NOTIFICATIONS), KeyboardButton(text=BTN_INTERVAL)],
-        [KeyboardButton(text=BTN_PAUSE), KeyboardButton(text=BTN_RESUME)],
-        [KeyboardButton(text=BTN_FORGET)],
     ],
     resize_keyboard=True,
     input_field_placeholder="Выберите действие…",
@@ -55,6 +51,13 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             resize_keyboard=True,
             input_field_placeholder="Откройте архив или выберите действие…",
         )
+    event_markup = (
+        InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="📂 Открыть архив", web_app=WebAppInfo(url=settings.webapp_url))
+        ]])
+        if settings.webapp_url.startswith("https://")
+        else menu
+    )
     pending: dict[int, list[str]] = defaultdict(list)
     digest_tasks: dict[int, asyncio.Task] = {}
 
@@ -69,7 +72,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             body = "\n".join(f"• {item}" for item in items[:12])
             if len(items) > 12:
                 body += f"\n…и ещё {len(items) - 12}"
-            await bot.send_message(owner_id, f"{header}\n\n{body}"[:3900], reply_markup=menu)
+            await bot.send_message(owner_id, f"{header}\n\n{body}"[:3900], reply_markup=event_markup)
         except Exception:
             log.exception("Could not send grouped message digest to owner=%s", owner_id)
         finally:
@@ -302,7 +305,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             await message.bot.send_message(
                 owner_id,
                 f"✏️ <b>Сообщение изменено</b>\nЧат: {chat_name}\nАвтор: {name}\n\n<b>Было:</b>\n{old_text}\n\n<b>Стало:</b>\n{new_text}",
-                reply_markup=menu,
+                reply_markup=event_markup,
                 parse_mode="HTML",
             )
         except Exception:
@@ -334,7 +337,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             await event.bot.send_message(
                 owner_id,
                 f"🗑 <b>Сообщение удалено</b>\nЧат: {chat_name}\nУдалений в событии: {len(event.message_ids)}\n\n{body}"[:3900],
-                reply_markup=menu,
+                reply_markup=event_markup,
                 parse_mode="HTML",
             )
         except Exception:
