@@ -47,6 +47,9 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
     api.state.bot_token = bot_token
     api.state.admin_ids = set(admin_ids or set())
     api.state.media_root = Path(media_root).resolve()
+    api.state.media_max_file_mb = 20
+    api.state.media_quota_mb = 1024
+    api.state.media_retention_days = 365
     api.state.ai_api_key = ""
     api.state.ai_model = "gpt-4.1-mini"
 
