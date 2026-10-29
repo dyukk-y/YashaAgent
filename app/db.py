@@ -329,16 +329,16 @@ class ArchiveDB:
             await db.execute(
                 """INSERT INTO archived_media
                    (connection_id, owner_user_id, chat_id, message_id, file_id, file_unique_id,
-                    media_type, file_name, mime_type, file_size, status, created_at)
-                   VALUES(?,?,?,?,?,?,?,?,?,?, 'pending', ?)
+                    media_type, media_group_id, file_name, mime_type, file_size, status, created_at)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?, 'pending', ?)
                    ON CONFLICT(connection_id, chat_id, message_id, file_unique_id) DO UPDATE SET
                     file_id=excluded.file_id, media_type=excluded.media_type,
-                    file_name=excluded.file_name, mime_type=excluded.mime_type,
-                    file_size=excluded.file_size""",
+                    media_group_id=excluded.media_group_id, file_name=excluded.file_name,
+                    mime_type=excluded.mime_type, file_size=excluded.file_size""",
                 (connection["connection_id"], connection["owner_user_id"], message.chat.id,
                  message.message_id, media["file_id"], media["file_unique_id"], media["media_type"],
-                 media.get("file_name", ""), media.get("mime_type", ""), media.get("file_size"),
-                 int(message.date.timestamp())),
+                 getattr(message, "media_group_id", None) or "", media.get("file_name", ""),
+                 media.get("mime_type", ""), media.get("file_size"), int(message.date.timestamp())),
             )
             row = await (await db.execute(
                 "SELECT id FROM archived_media WHERE connection_id=? AND chat_id=? AND message_id=? AND file_unique_id=?",
