@@ -62,6 +62,20 @@ class ArchiveDB:
                     hidden_at INTEGER NOT NULL,
                     PRIMARY KEY(owner_user_id, chat_id)
                 );
+                CREATE TABLE IF NOT EXISTS deleted_message_events (
+                    connection_id TEXT NOT NULL,
+                    owner_user_id INTEGER NOT NULL,
+                    chat_id INTEGER NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    deleted_at INTEGER NOT NULL,
+                    chat_title TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(connection_id, chat_id, message_id)
+                );
+                INSERT OR IGNORE INTO deleted_message_events
+                    (connection_id, owner_user_id, chat_id, message_id, deleted_at, chat_title)
+                    SELECT connection_id, owner_user_id, chat_id, message_id,
+                           strftime('%s','now'), chat_title
+                    FROM archived_messages WHERE is_deleted=1;
             """)
             # Safe migrations for existing installations.
             conn_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(business_connections)")).fetchall()}
@@ -192,6 +206,60 @@ class ArchiveDB:
             )
             return [dict(row) for row in await cur.fetchall()]
 
+    async def edit_history(self, owner_id: int, chat_id: int, message_id: int) -> list[dict[str, Any]]:
+        """Return every stored revision of one archived message, oldest first."""
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute(
+                """SELECT old_text, new_text, edited_at
+                   FROM archived_message_edits
+                   WHERE owner_user_id=? AND chat_id=? AND message_id=?
+                   ORDER BY edited_at ASC, id ASC""",
+                (owner_id, chat_id, message_id),
+            )
+            return [dict(row) for row in await cur.fetchall()]
+
+    async def list_events(self, owner_id: int | None, kind: str, limit: int = 100) -> list[dict[str, Any]]:
+        """List saved deletion events or every stored revision for the event feed."""
+        if kind not in {"deleted", "edited"}:
+            raise ValueError("Unsupported archive event kind")
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            if kind == "deleted":
+                sql = """SELECT d.owner_user_id, d.chat_id, d.message_id, d.deleted_at AS event_ts,
+                                COALESCE(a.date_ts, d.deleted_at) AS date_ts,
+                                COALESCE(a.sender_name, '') AS sender_name,
+                                COALESCE(a.text, '') AS text,
+                                COALESCE(NULLIF(a.chat_title, ''), d.chat_title) AS chat_title,
+                                COALESCE(a.raw_json, '{}') AS raw_json,
+                                CASE WHEN a.is_deleted=1 THEN 1 ELSE 0 END AS is_deleted,
+                                NULL AS old_text, NULL AS new_text
+                         FROM deleted_message_events d
+                         LEFT JOIN archived_messages a ON a.owner_user_id=d.owner_user_id
+                           AND a.chat_id=d.chat_id AND a.message_id=d.message_id
+                         WHERE 1=1"""
+                args: list[Any] = []
+                if owner_id is not None:
+                    sql += " AND d.owner_user_id=?"
+                    args.append(owner_id)
+                sql += " ORDER BY d.deleted_at DESC LIMIT ?"
+                args.append(limit)
+            else:
+                sql = """SELECT e.owner_user_id, e.chat_id, e.message_id, e.edited_at AS event_ts,
+                                a.date_ts, a.sender_name, a.text, a.chat_title, a.raw_json,
+                                a.is_deleted, e.old_text, e.new_text
+                         FROM archived_message_edits e
+                         JOIN archived_messages a ON a.owner_user_id=e.owner_user_id
+                           AND a.chat_id=e.chat_id AND a.message_id=e.message_id"""
+                args = []
+                if owner_id is not None:
+                    sql += " WHERE e.owner_user_id=?"
+                    args.append(owner_id)
+                sql += " ORDER BY e.edited_at DESC, e.id DESC LIMIT ?"
+                args.append(limit)
+            cur = await db.execute(sql, args)
+            return [dict(row) for row in await cur.fetchall()]
+
     async def owner_has_chat(self, owner_id: int, chat_id: int) -> bool:
         async with aiosqlite.connect(self.path) as db:
             row = await (await db.execute("SELECT 1 FROM archived_messages WHERE owner_user_id=? AND chat_id=? LIMIT 1", (owner_id, chat_id))).fetchone()
@@ -215,7 +283,7 @@ class ArchiveDB:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
             sql = """SELECT a.message_id,a.chat_id,a.date_ts,a.sender_user_id,a.owner_user_id,a.sender_name,a.text,a.is_deleted,
-                     a.chat_title,
+                     a.chat_title, a.raw_json,
                      EXISTS(SELECT 1 FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id AND e.message_id=a.message_id) AS edited,
                      (SELECT e.old_text FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id AND e.message_id=a.message_id ORDER BY e.edited_at DESC LIMIT 1) AS previous_text
                      FROM archived_messages a WHERE a.owner_user_id=? AND a.chat_id=?"""
@@ -241,6 +309,19 @@ class ArchiveDB:
                 ORDER BY a.date_ts DESC LIMIT 1""", (owner_id, chat_id))
             row = await cur.fetchone()
             return dict(row) if row else None
+
+    async def record_deletion_events(self, connection_id: str, chat_id: int, message_ids: list[int], owner_id: int, chat_title: str = "") -> None:
+        """Record every Telegram deletion update, even when its message body was never archived."""
+        if not message_ids:
+            return
+        async with aiosqlite.connect(self.path) as db:
+            await db.executemany(
+                """INSERT OR IGNORE INTO deleted_message_events
+                   (connection_id, owner_user_id, chat_id, message_id, deleted_at, chat_title)
+                   VALUES(?,?,?,?,strftime('%s','now'),?)""",
+                [(connection_id, owner_id, chat_id, message_id, chat_title) for message_id in message_ids],
+            )
+            await db.commit()
 
     async def mark_deleted(self, connection_id: str, chat_id: int, message_ids: list[int], owner_id: int) -> None:
         if not message_ids:
