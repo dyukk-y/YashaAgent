@@ -377,9 +377,25 @@ class ArchiveDB:
                 (connection["connection_id"], chat.id, message.message_id,
                  connection["connection_id"], chat.id, message.message_id),
             )).fetchone()
-            # Edit events are written by the dedicated edited-business-update
-            # handler, where the update itself is authoritative. Ordinary saves
-            # must not infer edits from incidental upserts.
+            # Keep edit history consistent for both the Telegram edit handler
+            # and direct DB saves used by retries, imports, and tests. The handler
+            # may already have inserted this event, so deduplicate by edit time
+            # and new text.
+            if existing and (existing[0] or "") != text:
+                await db.execute(
+                    """INSERT INTO archived_message_edits
+                       (connection_id,chat_id,message_id,owner_user_id,old_text,new_text,edited_at)
+                       SELECT ?,?,?,?,?,?,?
+                       WHERE NOT EXISTS (
+                           SELECT 1 FROM archived_message_edits
+                           WHERE connection_id=? AND chat_id=? AND message_id=?
+                             AND owner_user_id=? AND edited_at=? AND new_text=?
+                       )""",
+                    (connection["connection_id"], chat.id, message.message_id,
+                     connection["owner_user_id"], existing[0] or "", text, edited_ts,
+                     connection["connection_id"], chat.id, message.message_id,
+                     connection["owner_user_id"], edited_ts, text),
+                )
             # Remove the buffered original after the edit is captured.
             await db.execute("DELETE FROM message_buffer WHERE connection_id=? AND chat_id=? AND message_id=?",
                              (connection["connection_id"], chat.id, message.message_id))
