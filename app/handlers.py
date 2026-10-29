@@ -341,7 +341,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
 
     @router.business_message()
     async def business_message_handler(message: Message) -> None:
-        await archive_business_message(message)
+        # Archive ordinary messages silently. Notifications are reserved for edits/deletions.
+        await archive_business_message(message, notify=False)
 
     @router.edited_business_message()
     async def edited_business_message_handler(message: Message) -> None:
@@ -376,10 +377,27 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         old_text = old_text[:1200]
         new_text = new_text[:1200]
         chat_name = getattr(message.chat, "title", None) or getattr(message.chat, "first_name", None) or "Личный чат"
+        import difflib
+        def html_escape(value: str) -> str:
+            return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        old_words = re.findall(r"\\S+\\s*", old_text)
+        new_words = re.findall(r"\\S+\\s*", new_text)
+        matcher = difflib.SequenceMatcher(a=old_words, b=new_words, autojunk=False)
+        diff_parts = []
+        for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+            if tag == "equal":
+                diff_parts.extend(html_escape(x) for x in old_words[i1:i2])
+            else:
+                if tag in {"replace", "delete"}:
+                    diff_parts.append("<s>" + html_escape("".join(old_words[i1:i2])) + "</s>")
+                if tag in {"replace", "insert"}:
+                    diff_parts.append("<b>" + html_escape("".join(new_words[j1:j2])) + "</b>")
+        diff_text = "".join(diff_parts) or html_escape(new_text)
         try:
             await message.bot.send_message(
                 owner_id,
-                f"✏️ Изменено сообщение · {chat_name}\nАвтор: {name}\n\nБыло:\n{old_text}\n\nСтало:\n{new_text}",
+                f"✏️ Изменено сообщение · {html_escape(chat_name)}\\nАвтор: {html_escape(name)}\\n\\n{diff_text}",
+                parse_mode="HTML",
                 reply_markup=app_markup("Посмотреть изменённые", view="edited", chat_id=message.chat.id, message_id=message.message_id),
             )
         except Exception:
