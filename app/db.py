@@ -379,7 +379,7 @@ class ArchiveDB:
                             m.file_size,m.status,m.error,m.created_at,a.chat_title,a.sender_name,a.text,
                             a.date_ts
                      FROM archived_media m
-                     LEFT JOIN archived_messages a ON a.owner_user_id=m.owner_user_id
+                     LEFT JOIN archived_messages a ON a.connection_id=m.connection_id AND a.owner_user_id=m.owner_user_id
                        AND a.chat_id=m.chat_id AND a.message_id=m.message_id
                      WHERE m.status IN ('stored','failed','pending','expired','quota','too_large')"""
             args: list[Any] = []
@@ -419,12 +419,15 @@ class ArchiveDB:
                 (cutoff_ts,),
             )
             rows = [dict(row) for row in await cur.fetchall()]
+            return rows
+
+    async def mark_media_expired(self, media_id: int) -> None:
+        async with aiosqlite.connect(self.path) as db:
             await db.execute(
-                "UPDATE archived_media SET status='expired', stored_path='', error='Истёк срок хранения' WHERE status='stored' AND created_at < ?",
-                (cutoff_ts,),
+                "UPDATE archived_media SET status='expired', stored_path='', error='Истёк срок хранения' WHERE id=? AND status='stored'",
+                (media_id,),
             )
             await db.commit()
-            return rows
 
     async def reply_connection_for_chat(self, owner_id: int, chat_id: int) -> dict[str, Any] | None:
         async with aiosqlite.connect(self.path) as db:
