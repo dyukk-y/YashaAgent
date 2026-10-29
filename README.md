@@ -1,73 +1,151 @@
 # YashaAgent
 
-A consent-first Telegram Business inbox and archive with a responsive Telegram Mini App. Built with Python 3.12+, aiogram 3, FastAPI, Uvicorn, and SQLite.
+**Архив удалённых и изменённых сообщений Telegram Business** с Telegram Mini App для просмотра событий, истории правок и сохранённых вложений.
 
-## Features
+YashaAgent получает только те события и сообщения, которые Telegram передаёт боту после подключения Business-аккаунта и выдачи необходимых прав. Бот не загружает историю переписки задним числом и не может восстановить содержимое, которого никогда не получал.
 
-- Telegram Bot API polling for Business connection, message, edit, and deletion updates.
-- Responsive Telegram Mini App with chat list, message search, archived conversation view, deleted/edited event feeds, edit history, and reply composer.
-- Dedicated media library with type filters, image preview, video/audio playback, document downloads, per-owner storage quota, file-size limits, and retention cleanup.
-- Visual grouping for Telegram media albums when `media_group_id` is available; Business connection/read/reply status in the app header.
-- SQLite archive for accessible text/captions and message metadata, with edit-version history.
-- Immediate Telegram notifications when Telegram reports a business-message edit or deletion.
-- Reply from the Mini App on behalf of the connected Business account when Telegram's `can_reply` right allows it.
-- Button-based menu for archive, search, statistics, AI summary, notification preferences, pause/resume, and archive deletion.
-- Incoming business messages are grouped into a digest roughly once per minute instead of sending one alert per message.
-- Optional AI summaries. AI is disabled unless AI_API_KEY is configured.
-- Docker Compose with persistent database storage and configurable media storage/retention.
+## Возможности
 
-## Privacy and platform limits
+### Архив и история
+- Лента событий удаления и изменения сообщений.
+- История текстовых правок: сохранённые предыдущая и новая версии.
+- Просмотр диалогов и поиск по доступным архивным данным.
+- Главный администратор может просматривать доступные архивы подключённых владельцев.
+- Обычные сообщения могут использоваться как ограниченный временный буфер, чтобы сохранить содержимое при последующем событии удаления или изменения; постоянный архив предназначен прежде всего для событий.
 
-YashaAgent does not provide hidden access to another person's account, arbitrary private-chat history, or deleted messages that Telegram does not deliver. Archiving occurs only for an enabled Telegram Business connection when Telegram reports the required read-message right. The owner can pause archiving or erase their stored archive from the bot menu. Ordinary users are limited to their own archive; the configured main administrator can review all stored archives and search across them.
+### Медиа
+- Сохранение поддерживаемых вложений, полученных ботом: фото, видео, GIF-анимаций, документов, стикеров, голосовых сообщений, аудио и видеокружков.
+- Отдельная медиатека с поиском и фильтрами по типам.
+- Предпросмотр изображений, воспроизведение поддерживаемых видео/аудио и скачивание файлов.
+- Группировка вложений в альбомы, если Telegram передал идентификатор группы.
+- Ограничение размера файла и общего объёма хранилища, срок хранения и фоновая очистка просроченных медиа.
 
-When AI summaries are enabled through supported bot commands, recent archived text is sent to the configured AI provider for processing. Do not configure an AI key if you do not want message text sent to an external provider. Supported attachments are downloaded when new Business messages arrive and are available in the Mini App media library. Storage settings are `MEDIA_PATH`, `MEDIA_MAX_FILE_MB`, `MEDIA_QUOTA_MB`, and `MEDIA_RETENTION_DAYS`; mount `MEDIA_PATH` on persistent storage in production. Self-destructing media cannot be guaranteed because Telegram may not expose its contents to bots.
+### Telegram-бот и Mini App
+- Уведомления о событиях, которые Telegram передал боту.
+- Короткое приветствие и кнопка открытия Mini App.
+- Интерфейс просмотра архива работает в режиме чтения: отправка ответов и скрытие диалогов из Mini App не предусмотрены.
+- Поддержка отдельного списка ID главных администраторов через `ADMIN_USER_IDS`.
 
-## Run locally
+## Важные ограничения
 
-1. Create a bot with [@BotFather](https://t.me/BotFather).
-2. Copy .env.example to .env and set BOT_TOKEN.
-3. Install Python 3.12+ and run:
+- **Нет доступа к старой истории задним числом.** Архивирование начинается после подключения и выдачи прав.
+- **Удаление не гарантирует наличие исходного текста.** Telegram может прислать только ID удалённого сообщения. Текст можно показать, только если он был получен и ещё доступен в буфере/архиве до удаления.
+- **Изменения фиксируются только для событий, которые Telegram передал боту.** Реальное поведение зависит от Business-подключения и выданных прав.
+- **Медиа сохраняется не во всех возможных сценариях.** Самоуничтожающиеся фото и видео, а также содержимое, недоступное Bot API, гарантированно восстановить нельзя.
+- **Файлы должны храниться на постоянном диске.** При удалении контейнера или потере тома медиа может быть утрачено.
+- **Защита API не заменяет шифрование диска.** Ограничивайте доступ к серверу, базе данных и резервным копиям.
+- Не подключайте чужой аккаунт без согласия владельца. Соблюдайте требования конфиденциальности и местное законодательство.
 
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r requirements.txt
-   python -m app.main
-   ```
+## Технологии
 
-   On Windows, activate with .venv\\Scripts\\activate.
+- Python 3.12+
+- aiogram 3
+- FastAPI и Uvicorn
+- SQLite
+- HTML/CSS/JavaScript для Telegram Mini App
+- Docker Compose
 
-## Run with Docker
+## Быстрый запуск локально
 
-Set `BOT_TOKEN` and `WEBAPP_URL` in `.env`, then run `docker compose up --build -d`. SQLite data is stored in `./data`; protect that directory and back it up securely.
+### 1. Создайте бота
 
-The Mini App must be served through a **public HTTPS domain**. Point your domain's DNS to the server, copy `Caddyfile.example` to `Caddyfile`, replace the example domain, and configure Caddy to reverse-proxy to `127.0.0.1:8080`. Then set `WEBAPP_URL=https://your-domain/` in `.env` and restart the service. Telegram will not open a Mini App served from plain HTTP. Port 8080 is bound to localhost so the API is not exposed directly to the public internet.
+Создайте Telegram-бота через [@BotFather](https://t.me/BotFather) и получите токен.
 
-## Bot interface
+### 2. Настройте окружение
 
-After the first `/start`, everyday actions are available from the persistent button menu:
-- **🗂 Мой архив** — record count and archive status
-- **🔎 Поиск** — enter a word or phrase in the next message
-- **📊 Статистика** — saved and deleted-in-source counts
-- **🧠 Сводка** — optional AI summary (requires `AI_API_KEY`)
-- **🔔 Уведомления** — toggle grouped incoming-message digests
-- **⏱ Интервал сводки** — cycle through the notification batching interval
-- **⏸ Пауза архива / ▶️ Продолжить архив** — pause or resume storage
-- **🗑 Очистить архив** — asks for confirmation before deleting records
+Скопируйте `.env.example` в `.env` и укажите как минимум:
 
-The Mini App opens from the **📱 Открыть приложение** button when `WEBAPP_URL` is configured. It includes a media library with type filters, image previews, video/audio playback, download controls, storage usage and retention status. Media endpoints validate Telegram's signed `initData`; admin media browsing is restricted to `ADMIN_USER_IDS`. It validates Telegram's signed `initData` on every API request and scopes all archive queries to the authenticated Telegram user. Replies are sent through the selected Business connection and require the connection's `can_reply` right; Telegram limits this to eligible private chats active in the last 24 hours.
+```dotenv
+BOT_TOKEN=ваш_токен_бота
+WEBAPP_URL=https://ваш-публичный-https-адрес/
+ADMIN_USER_IDS=ваш_telegram_user_id
+```
 
-The owner must start the bot with `/start` before it can send them private event alerts. The bot only receives the business messages and changes Telegram makes available after the owner explicitly connects it and grants rights. It cannot load old chat history on demand.
+Не публикуйте токен и не добавляйте файл `.env` в Git.
 
-## Tests
+### 3. Установите зависимости и запустите
+
+Требуется Python 3.12 или новее.
+
+```bash
+python -m venv .venv
+# Linux/macOS
+source .venv/bin/activate
+# Windows PowerShell: .venv\\Scripts\\Activate.ps1
+
+pip install -r requirements.txt
+python -m app.main
+```
+
+## Запуск через Docker Compose
+
+1. Создайте `.env` с обязательными переменными.
+2. Убедитесь, что папка `./data` находится на постоянном диске.
+3. Запустите:
+
+```bash
+docker compose up --build -d
+docker compose logs -f yashaagent
+```
+
+Compose сохраняет базу и медиа в `./data`, смонтированной в контейнер как `/data`. Для production убедитесь, что этот каталог находится на постоянном томе хостинга.
+
+### Публичный адрес Mini App
+
+Telegram Mini App требует публичный HTTPS-адрес. Настройте домен и TLS на своём хостинге, затем задайте `WEBAPP_URL` в `.env` и перезапустите приложение. Внешний доступ к внутреннему порту приложения лучше ограничить обратным прокси с HTTPS.
+
+## Переменные окружения
+
+| Переменная | Назначение | Значение по умолчанию |
+|---|---|---|
+| `BOT_TOKEN` | Токен Telegram-бота | Обязательно |
+| `WEBAPP_URL` | HTTPS-адрес Mini App | Пусто |
+| `ADMIN_USER_IDS` | Telegram ID администраторов через запятую | Пусто |
+| `DATABASE_PATH` | Путь к SQLite | `data/yashaagent.sqlite3` |
+| `MEDIA_PATH` | Каталог сохранённых файлов | `/data/media` |
+| `MEDIA_MAX_FILE_MB` | Максимальный размер одного файла в МБ | `20` |
+| `MEDIA_QUOTA_MB` | Лимит медиа на владельца в МБ | `1024` |
+| `MEDIA_RETENTION_DAYS` | Срок хранения медиа в днях | `365` |
+| `LOG_LEVEL` | Уровень логирования | `INFO` |
+| `AI_API_KEY` | Необязательный ключ AI-провайдера для доступных AI-функций | Пусто |
+| `AI_MODEL` | Модель для AI-функций | `gpt-4.1-mini` |
+| `WEBAPP_PORT` | Порт веб-приложения | `8080` |
+
+Если AI-функции не нужны, оставьте `AI_API_KEY` пустым. Перед включением AI ознакомьтесь с тем, какие данные могут передаваться внешнему провайдеру.
+
+## Подключение Telegram Business
+
+1. Пользователь должен запустить бота командой `/start`.
+2. В настройках Telegram Business подключите бота к аккаунту.
+3. Выдайте разрешение на чтение доступных Business-сообщений и получение необходимых обновлений.
+4. Убедитесь, что подключение включено, а сервер продолжает работать.
+5. Отправьте тестовое сообщение, затем отредактируйте и удалите отдельное тестовое сообщение.
+6. Откройте Mini App и проверьте ленты изменений, удалений и медиатеку.
+
+Названия пунктов Telegram могут отличаться в зависимости от версии клиента. Доступные события определяются разрешениями Business-подключения и возможностями Telegram Bot API.
+
+## Тесты
+
+Установите зависимости разработки и выполните тесты:
 
 ```bash
 pip install -r requirements-dev.txt
-pytest
+pytest -q
 ```
 
-## Before production
+## Рекомендации для production
 
-Telegram's deletion update contains chat/message identifiers, not the deleted message text or the identity of the person who deleted it. YashaAgent can display archived text for a deleted message only if it stored that message earlier; it cannot reliably say who deleted it. Edit alerts compare the previous archived text with the version Telegram sends. Supported attachments are downloaded when the Business message arrives, subject to Telegram Bot API availability, `MEDIA_MAX_FILE_MB`, and the per-owner `MEDIA_QUOTA_MB` limit. The default retention is `MEDIA_RETENTION_DAYS=365`; expired files are removed by a background cleanup task. Ensure `MEDIA_PATH` is on a persistent disk/volume and monitor available disk space.
+- Используйте постоянный диск для базы данных и каталога медиа.
+- Делайте регулярные резервные копии базы и файлов; периодически проверяйте восстановление.
+- Ограничьте доступ к серверу, переменным окружения и архивам.
+- Не храните реальные токены, экспорт переписок и пользовательские медиа в репозитории.
+- Проверяйте журналы ошибок и свободное место на диске.
+- Проведите тесты на своём Business-подключении до того, как полагаться на архив в важных ситуациях.
 
-Before production, configure HTTPS, backups, access control and a retention policy. The Mini App is an MVP: test the full connection/reply flow with your own Business account before relying on it. Never commit real tokens or private message exports.
+## Статус проекта
+
+Текущий список реализованных возможностей, ограничений и планов находится в [FEATURE_STATUS.md](FEATURE_STATUS.md). Telegram может менять доступность Business-обновлений; перед использованием в критичных сценариях проверяйте фактическую работу на своём подключении.
+
+---
+
+YashaAgent — `@YashaAgent`
