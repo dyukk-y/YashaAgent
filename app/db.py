@@ -377,14 +377,9 @@ class ArchiveDB:
                 (connection["connection_id"], chat.id, message.message_id,
                  connection["connection_id"], chat.id, message.message_id),
             )).fetchone()
-            if existing and (existing[0] or "") != text:
-                await db.execute(
-                    """INSERT INTO archived_message_edits
-                       (connection_id,chat_id,message_id,owner_user_id,old_text,new_text,edited_at)
-                       VALUES(?,?,?,?,?,?,?)""",
-                    (connection["connection_id"], chat.id, message.message_id, connection["owner_user_id"],
-                     existing[0] or "", text, edited_ts),
-                )
+            # Edit events are written by the dedicated edited-business-update
+            # handler, where the update itself is authoritative. Ordinary saves
+            # must not infer edits from incidental upserts.
             # Remove the buffered original after the edit is captured.
             await db.execute("DELETE FROM message_buffer WHERE connection_id=? AND chat_id=? AND message_id=?",
                              (connection["connection_id"], chat.id, message.message_id))
@@ -394,6 +389,27 @@ class ArchiveDB:
                 text=excluded.text, chat_title=excluded.chat_title, raw_json=excluded.raw_json, is_deleted=0""",
                 (connection["connection_id"], connection["owner_user_id"], chat.id, message.message_id,
                  date_ts, sender_user_id, sender_name, text, chat_title, json.dumps(payload, ensure_ascii=False)))
+            await db.commit()
+
+    async def record_message_edit(
+        self, connection_id: str, owner_id: int, chat_id: int, message_id: int,
+        old_text: str, new_text: str, edited_at: int,
+    ) -> None:
+        """Persist one Telegram edited_business_message update in the event feed."""
+        async with aiosqlite.connect(self.path) as db:
+            # Avoid duplicate rows if Telegram retries delivery of the same update.
+            await db.execute(
+                """INSERT INTO archived_message_edits
+                   (connection_id,chat_id,message_id,owner_user_id,old_text,new_text,edited_at)
+                   SELECT ?,?,?,?,?,?,?
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM archived_message_edits
+                       WHERE connection_id=? AND chat_id=? AND message_id=?
+                         AND owner_user_id=? AND edited_at=? AND new_text=?
+                   )""",
+                (connection_id, chat_id, message_id, owner_id, old_text, new_text, edited_at,
+                 connection_id, chat_id, message_id, owner_id, edited_at, new_text),
+            )
             await db.commit()
 
     async def get_archived_message(self, connection_id: str, chat_id: int, message_id: int) -> dict[str, Any] | None:
