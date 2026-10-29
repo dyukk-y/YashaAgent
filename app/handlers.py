@@ -109,6 +109,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     async def archive_media(message: Message, connection: dict, owner_id: int) -> None:
         media = extract_media(message)
         if not media:
+        root = Path(settings.media_path).resolve()
             return
         media_id = await db.save_media_record(connection, message, media)
         existing = await db.media_file(owner_id, message.chat.id, message.message_id, media_id)
@@ -142,7 +143,6 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             if actual_size and usage + actual_size > quota_bytes:
                 await db.update_media_record(media_id, "", "quota", f"Файл превысит лимит хранилища {settings.media_quota_mb} МБ")
                 return
-            root = Path(settings.media_path).resolve()
             target_dir = root / str(owner_id) / str(message.chat.id) / str(message.message_id)
             target_dir.mkdir(parents=True, exist_ok=True)
             original_name = Path(media.get("file_name") or Path(telegram_file.file_path).name).name
