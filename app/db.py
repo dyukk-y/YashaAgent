@@ -56,6 +56,12 @@ class ArchiveDB:
                     enabled INTEGER NOT NULL DEFAULT 1,
                     interval_seconds INTEGER NOT NULL DEFAULT 60
                 );
+                CREATE TABLE IF NOT EXISTS hidden_chats (
+                    owner_user_id INTEGER NOT NULL,
+                    chat_id INTEGER NOT NULL,
+                    hidden_at INTEGER NOT NULL,
+                    PRIMARY KEY(owner_user_id, chat_id)
+                );
             """)
             # Safe migrations for existing installations.
             conn_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(business_connections)")).fetchall()}
@@ -199,7 +205,9 @@ class ArchiveDB:
                        SUM(a.is_deleted) AS deleted_count, MAX(a.date_ts) AS last_date,
                        (SELECT x.text FROM archived_messages x WHERE x.owner_user_id=a.owner_user_id AND x.chat_id=a.chat_id ORDER BY x.date_ts DESC LIMIT 1) AS last_text,
                        (SELECT COUNT(*) FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id) AS edited_count
-                FROM archived_messages a WHERE a.owner_user_id=? GROUP BY a.chat_id ORDER BY last_date DESC
+                FROM archived_messages a WHERE a.owner_user_id=?
+                  AND NOT EXISTS (SELECT 1 FROM hidden_chats h WHERE h.owner_user_id=a.owner_user_id AND h.chat_id=a.chat_id)
+                GROUP BY a.chat_id ORDER BY last_date DESC
             """, (owner_id,))
             return [dict(row) for row in await cur.fetchall()]
 
@@ -268,3 +276,33 @@ class ArchiveDB:
             await db.execute("DELETE FROM archived_messages WHERE owner_user_id=?", (owner_id,))
             await db.commit()
             return count
+
+
+    async def hide_chat(self, owner_id: int, chat_id: int) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO hidden_chats(owner_user_id, chat_id, hidden_at) VALUES(?,?,strftime('%s','now'))",
+                (owner_id, chat_id),
+            )
+            await db.commit()
+
+    async def unhide_chat(self, owner_id: int, chat_id: int) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("DELETE FROM hidden_chats WHERE owner_user_id=? AND chat_id=?", (owner_id, chat_id))
+            await db.commit()
+
+    async def list_chats_admin(self) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute("""
+                SELECT a.owner_user_id, a.chat_id, MAX(a.chat_title) AS title,
+                       COUNT(*) AS message_count, COALESCE(SUM(a.is_deleted),0) AS deleted_count,
+                       MAX(a.date_ts) AS last_date,
+                       (SELECT x.text FROM archived_messages x WHERE x.owner_user_id=a.owner_user_id AND x.chat_id=a.chat_id ORDER BY x.date_ts DESC LIMIT 1) AS last_text,
+                       (SELECT COUNT(*) FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id) AS edited_count,
+                       EXISTS(SELECT 1 FROM hidden_chats h WHERE h.owner_user_id=a.owner_user_id AND h.chat_id=a.chat_id) AS is_hidden
+                FROM archived_messages a
+                GROUP BY a.owner_user_id, a.chat_id
+                ORDER BY last_date DESC
+            """)
+            return [dict(row) for row in await cur.fetchall()]
