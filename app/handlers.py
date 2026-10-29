@@ -111,6 +111,16 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if not media:
             return
         media_id = await db.save_media_record(connection, message, media)
+        existing = await db.media_file(owner_id, message.chat.id, message.message_id, media_id)
+        if existing and existing.get("status") == "stored" and existing.get("stored_path"):
+            existing_path = Path(existing["stored_path"]).resolve()
+            try:
+                existing_path.relative_to(root)
+                if existing_path.is_file():
+                    return
+            except ValueError:
+                pass
+            await db.update_media_record(media_id, "", "pending", "Повторное сохранение файла")
         try:
             max_file_bytes = max(1, settings.media_max_file_mb) * 1024 * 1024
             quota_bytes = max(1, settings.media_quota_mb) * 1024 * 1024
