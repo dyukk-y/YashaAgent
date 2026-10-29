@@ -62,6 +62,15 @@ class ArchiveDB:
                     hidden_at INTEGER NOT NULL,
                     PRIMARY KEY(owner_user_id, chat_id)
                 );
+                CREATE TABLE IF NOT EXISTS deleted_message_events (
+                    connection_id TEXT NOT NULL,
+                    owner_user_id INTEGER NOT NULL,
+                    chat_id INTEGER NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    deleted_at INTEGER NOT NULL,
+                    chat_title TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY(connection_id, chat_id, message_id)
+                );
             """)
             # Safe migrations for existing installations.
             conn_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(business_connections)")).fetchall()}
@@ -212,15 +221,23 @@ class ArchiveDB:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
             if kind == "deleted":
-                sql = """SELECT a.owner_user_id, a.chat_id, a.message_id, a.date_ts AS event_ts,
-                                a.date_ts, a.sender_name, a.text, a.chat_title, a.raw_json,
-                                a.is_deleted, NULL AS old_text, NULL AS new_text
-                         FROM archived_messages a WHERE a.is_deleted=1"""
+                sql = """SELECT d.owner_user_id, d.chat_id, d.message_id, d.deleted_at AS event_ts,
+                                COALESCE(a.date_ts, d.deleted_at) AS date_ts,
+                                COALESCE(a.sender_name, '') AS sender_name,
+                                COALESCE(a.text, '') AS text,
+                                COALESCE(NULLIF(a.chat_title, ''), d.chat_title) AS chat_title,
+                                COALESCE(a.raw_json, '{}') AS raw_json,
+                                CASE WHEN a.is_deleted=1 THEN 1 ELSE 0 END AS is_deleted,
+                                NULL AS old_text, NULL AS new_text
+                         FROM deleted_message_events d
+                         LEFT JOIN archived_messages a ON a.owner_user_id=d.owner_user_id
+                           AND a.chat_id=d.chat_id AND a.message_id=d.message_id
+                         WHERE 1=1"""
                 args: list[Any] = []
                 if owner_id is not None:
-                    sql += " AND a.owner_user_id=?"
+                    sql += " AND d.owner_user_id=?"
                     args.append(owner_id)
-                sql += " ORDER BY a.date_ts DESC LIMIT ?"
+                sql += " ORDER BY d.deleted_at DESC LIMIT ?"
                 args.append(limit)
             else:
                 sql = """SELECT e.owner_user_id, e.chat_id, e.message_id, e.edited_at AS event_ts,
@@ -287,6 +304,19 @@ class ArchiveDB:
                 ORDER BY a.date_ts DESC LIMIT 1""", (owner_id, chat_id))
             row = await cur.fetchone()
             return dict(row) if row else None
+
+    async def record_deletion_events(self, connection_id: str, chat_id: int, message_ids: list[int], owner_id: int, chat_title: str = "") -> None:
+        """Record every Telegram deletion update, even when its message body was never archived."""
+        if not message_ids:
+            return
+        async with aiosqlite.connect(self.path) as db:
+            await db.executemany(
+                """INSERT OR IGNORE INTO deleted_message_events
+                   (connection_id, owner_user_id, chat_id, message_id, deleted_at, chat_title)
+                   VALUES(?,?,?,?,strftime('%s','now'),?)""",
+                [(connection_id, owner_id, chat_id, message_id, chat_title) for message_id in message_ids],
+            )
+            await db.commit()
 
     async def mark_deleted(self, connection_id: str, chat_id: int, message_ids: list[int], owner_id: int) -> None:
         if not message_ids:
