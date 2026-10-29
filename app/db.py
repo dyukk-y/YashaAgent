@@ -149,6 +149,25 @@ class ArchiveDB:
                  date_ts, sender.id if sender else None, sender_name, text, chat_title, json.dumps(payload, ensure_ascii=False)))
             await db.commit()
 
+    async def get_archived_message(self, connection_id: str, chat_id: int, message_id: int) -> dict[str, Any] | None:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            cur = await db.execute("SELECT sender_name,text FROM archived_messages WHERE connection_id=? AND chat_id=? AND message_id=?", (connection_id, chat_id, message_id))
+            row = await cur.fetchone()
+            return dict(row) if row else None
+
+    async def get_archived_messages(self, connection_id: str, chat_id: int, message_ids: list[int], owner_id: int) -> list[dict[str, Any]]:
+        if not message_ids:
+            return []
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            placeholders = ",".join("?" for _ in message_ids)
+            cur = await db.execute(
+                f"SELECT message_id,sender_name,text FROM archived_messages WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders}) ORDER BY date_ts",
+                (connection_id, owner_id, chat_id, *message_ids),
+            )
+            return [dict(row) for row in await cur.fetchall()]
+
     async def owner_has_chat(self, owner_id: int, chat_id: int) -> bool:
         async with aiosqlite.connect(self.path) as db:
             row = await (await db.execute("SELECT 1 FROM archived_messages WHERE owner_user_id=? AND chat_id=? LIMIT 1", (owner_id, chat_id))).fetchone()
