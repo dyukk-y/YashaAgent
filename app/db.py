@@ -126,6 +126,10 @@ class ArchiveDB:
             notification_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(notification_settings)")).fetchall()}
             if "interval_seconds" not in notification_columns:
                 await db.execute("ALTER TABLE notification_settings ADD COLUMN interval_seconds INTEGER NOT NULL DEFAULT 60")
+            if "notify_edits" not in notification_columns:
+                await db.execute("ALTER TABLE notification_settings ADD COLUMN notify_edits INTEGER NOT NULL DEFAULT 1")
+            if "notify_deletions" not in notification_columns:
+                await db.execute("ALTER TABLE notification_settings ADD COLUMN notify_deletions INTEGER NOT NULL DEFAULT 1")
             media_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(archived_media)")).fetchall()}
             if "media_group_id" not in media_columns:
                 await db.execute("ALTER TABLE archived_media ADD COLUMN media_group_id TEXT NOT NULL DEFAULT ''")
@@ -210,6 +214,8 @@ class ArchiveDB:
             "archive_enabled": await self.owner_archive_enabled(owner_id),
             "notifications_enabled": await self.notifications_enabled(owner_id),
             "interval_seconds": await self.notification_interval(owner_id),
+            "notify_edits": await self.notification_type_enabled(owner_id, "edits"),
+            "notify_deletions": await self.notification_type_enabled(owner_id, "deletions"),
         }
 
     async def save_connection(self, connection_id: str, owner_id: int, enabled: bool, can_read: bool, updated_at: int, can_reply: bool = False, owner_username: str = "") -> None:
@@ -273,6 +279,27 @@ class ArchiveDB:
     async def set_notifications_enabled(self, owner_id: int, enabled: bool) -> None:
         async with aiosqlite.connect(self.path) as db:
             await db.execute("INSERT INTO notification_settings(owner_user_id, enabled) VALUES(?,?) ON CONFLICT(owner_user_id) DO UPDATE SET enabled=excluded.enabled", (owner_id, int(enabled)))
+            await db.commit()
+
+    async def notification_type_enabled(self, owner_id: int, event_type: str) -> bool:
+        column = {"edits": "notify_edits", "deletions": "notify_deletions"}.get(event_type)
+        if column is None:
+            raise ValueError("Unsupported notification event type")
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute(f"SELECT {column} FROM notification_settings WHERE owner_user_id=?", (owner_id,))
+            row = await cur.fetchone()
+            return bool(row[0]) if row else True
+
+    async def set_notification_type_enabled(self, owner_id: int, event_type: str, enabled: bool) -> None:
+        column = {"edits": "notify_edits", "deletions": "notify_deletions"}.get(event_type)
+        if column is None:
+            raise ValueError("Unsupported notification event type")
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute(
+                f"INSERT INTO notification_settings(owner_user_id, enabled, {column}) VALUES(?,1,?) "
+                f"ON CONFLICT(owner_user_id) DO UPDATE SET {column}=excluded.{column}",
+                (owner_id, int(enabled)),
+            )
             await db.commit()
 
     async def notification_interval(self, owner_id: int) -> int:
