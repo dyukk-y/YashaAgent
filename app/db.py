@@ -428,10 +428,14 @@ class ArchiveDB:
                 args.append(limit)
             else:
                 sql = """SELECT e.owner_user_id, e.chat_id, e.message_id, e.edited_at AS event_ts,
-                                a.date_ts, a.sender_name, a.text, a.chat_title, a.raw_json,
-                                a.is_deleted, e.old_text, e.new_text
+                                COALESCE(a.date_ts, e.edited_at) AS date_ts,
+                                COALESCE(a.sender_name, '') AS sender_name,
+                                COALESCE(a.text, e.new_text) AS text,
+                                COALESCE(a.chat_title, '') AS chat_title,
+                                COALESCE(a.raw_json, '{}') AS raw_json,
+                                COALESCE(a.is_deleted, 0) AS is_deleted, e.old_text, e.new_text
                          FROM archived_message_edits e
-                         JOIN archived_messages a ON a.owner_user_id=e.owner_user_id
+                         LEFT JOIN archived_messages a ON a.owner_user_id=e.owner_user_id
                            AND a.chat_id=e.chat_id AND a.message_id=e.message_id"""
                 args = []
                 if owner_id is not None:
