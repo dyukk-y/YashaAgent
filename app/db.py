@@ -270,8 +270,8 @@ class ArchiveDB:
             db.row_factory = aiosqlite.Row
             placeholders = ",".join("?" for _ in message_ids)
             cur = await db.execute(
-                f"""SELECT message_id,sender_name,text FROM archived_messages WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})
-                    UNION SELECT message_id,sender_name,text FROM message_buffer WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})
+                f"""SELECT message_id,sender_name,text,raw_json FROM archived_messages WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})
+                    UNION SELECT message_id,sender_name,text,raw_json FROM message_buffer WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})
                     ORDER BY message_id""",
                 (connection_id, owner_id, chat_id, *message_ids, connection_id, owner_id, chat_id, *message_ids),
             )
@@ -333,20 +333,25 @@ class ArchiveDB:
 
     async def owner_has_chat(self, owner_id: int, chat_id: int) -> bool:
         async with aiosqlite.connect(self.path) as db:
-            row = await (await db.execute("SELECT 1 FROM archived_messages WHERE owner_user_id=? AND chat_id=? LIMIT 1", (owner_id, chat_id))).fetchone()
+            row = await (await db.execute("SELECT 1 FROM archived_messages WHERE owner_user_id=? AND chat_id=? UNION SELECT 1 FROM message_buffer WHERE owner_user_id=? AND chat_id=? LIMIT 1", (owner_id, chat_id, owner_id, chat_id))).fetchone()
             return row is not None
 
     async def list_chats(self, owner_id: int) -> list[dict[str, Any]]:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
             cur = await db.execute("""
-                SELECT a.chat_id, MAX(a.chat_title) AS title, COUNT(*) AS message_count,
-                       SUM(a.is_deleted) AS deleted_count, MAX(a.date_ts) AS last_date,
-                       (SELECT x.text FROM archived_messages x WHERE x.owner_user_id=a.owner_user_id AND x.chat_id=a.chat_id ORDER BY x.date_ts DESC LIMIT 1) AS last_text,
+                WITH all_chat_rows AS (
+                    SELECT owner_user_id,chat_id,chat_title,date_ts,text,is_deleted FROM archived_messages
+                    UNION ALL SELECT owner_user_id,chat_id,chat_title,date_ts,text,0 AS is_deleted FROM message_buffer
+                )
+                SELECT a.chat_id, MAX(a.chat_title) AS title,
+                       (SELECT COUNT(*) FROM archived_messages x WHERE x.owner_user_id=a.owner_user_id AND x.chat_id=a.chat_id) AS message_count,
+                       COALESCE(SUM(a.is_deleted),0) AS deleted_count, MAX(a.date_ts) AS last_date,
+                       (SELECT x.text FROM message_buffer x WHERE x.owner_user_id=a.owner_user_id AND x.chat_id=a.chat_id ORDER BY x.date_ts DESC LIMIT 1) AS last_text,
                        (SELECT COUNT(*) FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id) AS edited_count
-                FROM archived_messages a WHERE a.owner_user_id=?
+                FROM all_chat_rows a WHERE a.owner_user_id=?
                   AND NOT EXISTS (SELECT 1 FROM hidden_chats h WHERE h.owner_user_id=a.owner_user_id AND h.chat_id=a.chat_id)
-                GROUP BY a.chat_id ORDER BY last_date DESC
+                GROUP BY a.owner_user_id,a.chat_id ORDER BY last_date DESC
             """, (owner_id,))
             return [dict(row) for row in await cur.fetchall()]
 
