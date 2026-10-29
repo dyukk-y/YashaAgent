@@ -33,10 +33,6 @@ BTN_FORGET = "🗑 Очистить архив"
 MENU = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text=BTN_ARCHIVE), KeyboardButton(text=BTN_SEARCH)],
-        [KeyboardButton(text=BTN_STATS), KeyboardButton(text=BTN_SUMMARY)],
-        [KeyboardButton(text=BTN_NOTIFICATIONS), KeyboardButton(text=BTN_INTERVAL)],
-        [KeyboardButton(text=BTN_PAUSE), KeyboardButton(text=BTN_RESUME)],
-        [KeyboardButton(text=BTN_FORGET)],
     ],
     resize_keyboard=True,
     input_field_placeholder="Выберите действие…",
@@ -55,6 +51,13 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             resize_keyboard=True,
             input_field_placeholder="Откройте архив или выберите действие…",
         )
+    event_markup = (
+        InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="📂 Открыть архив", web_app=WebAppInfo(url=settings.webapp_url))
+        ]])
+        if settings.webapp_url.startswith("https://")
+        else menu
+    )
     pending: dict[int, list[str]] = defaultdict(list)
     digest_tasks: dict[int, asyncio.Task] = {}
 
@@ -69,7 +72,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             body = "\n".join(f"• {item}" for item in items[:12])
             if len(items) > 12:
                 body += f"\n…и ещё {len(items) - 12}"
-            await bot.send_message(owner_id, f"{header}\n\n{body}"[:3900], reply_markup=menu)
+            await bot.send_message(owner_id, f"{header}\n\n{body}"[:3900], reply_markup=event_markup)
         except Exception:
             log.exception("Could not send grouped message digest to owner=%s", owner_id)
         finally:
@@ -250,11 +253,24 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if not connection_id:
             return
         connection = await db.get_connection(connection_id)
-        if not connection or not connection["is_enabled"] or not connection["can_read_messages"]:
+        if not connection:
+            log.warning("Ignoring business update: unknown connection_id=%s", connection_id)
+            return
+        if not connection["is_enabled"] or not connection["can_read_messages"]:
+            log.warning(
+                "Ignoring business update: connection=%s enabled=%s can_read_messages=%s",
+                connection_id, connection["is_enabled"], connection["can_read_messages"],
+            )
             return
         owner_id = connection["owner_user_id"]
         if await db.owner_archive_enabled(owner_id):
             await db.save_message(connection, message)
+            log.info(
+                "Archived business message owner=%s chat=%s message=%s",
+                owner_id, message.chat.id, message.message_id,
+            )
+        else:
+            log.warning("Archive is paused for owner=%s; message was not stored", owner_id)
         # Notifications are independent from archive retention: pausing storage does not silence alerts.
         if notify:
             await queue_notification(message, owner_id)
@@ -269,7 +285,14 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if not connection_id:
             return
         connection = await db.get_connection(connection_id)
-        if not connection or not connection["is_enabled"] or not connection["can_read_messages"]:
+        if not connection:
+            log.warning("Ignoring business update: unknown connection_id=%s", connection_id)
+            return
+        if not connection["is_enabled"] or not connection["can_read_messages"]:
+            log.warning(
+                "Ignoring business update: connection=%s enabled=%s can_read_messages=%s",
+                connection_id, connection["is_enabled"], connection["can_read_messages"],
+            )
             return
         owner_id = connection["owner_user_id"]
         previous = await db.get_archived_message(connection_id, message.chat.id, message.message_id)
@@ -288,7 +311,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             await message.bot.send_message(
                 owner_id,
                 f"✏️ <b>Сообщение изменено</b>\nЧат: {chat_name}\nАвтор: {name}\n\n<b>Было:</b>\n{old_text}\n\n<b>Стало:</b>\n{new_text}",
-                reply_markup=menu,
+                reply_markup=event_markup,
                 parse_mode="HTML",
             )
         except Exception:
@@ -302,6 +325,10 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         owner_id = connection["owner_user_id"]
         deleted_rows = await db.get_archived_messages(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
         await db.mark_deleted(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
+        log.info(
+            "Business deletion event owner=%s chat=%s ids=%s archived_matches=%s",
+            owner_id, event.chat.id, len(event.message_ids), len(deleted_rows),
+        )
         if not await db.notifications_enabled(owner_id):
             return
         if deleted_rows:
@@ -320,7 +347,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             await event.bot.send_message(
                 owner_id,
                 f"🗑 <b>Сообщение удалено</b>\nЧат: {chat_name}\nУдалений в событии: {len(event.message_ids)}\n\n{body}"[:3900],
-                reply_markup=menu,
+                reply_markup=event_markup,
                 parse_mode="HTML",
             )
         except Exception:
