@@ -354,7 +354,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             await message.bot.send_message(
                 owner_id,
                 f"✏️ Сообщение изменено\nЧат: {chat_name}\nАвтор: {name}\n\nБыло:\n{old_text}\n\nСтало:\n{new_text}",
-                reply_markup=event_markup,
+                reply_markup=app_markup("Посмотреть изменённые", view="edited", chat_id=message.chat.id, message_id=message.message_id),
             )
         except Exception:
             log.exception("Could not send edit alert to owner=%s", owner_id)
@@ -402,7 +402,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             await event.bot.send_message(
                 owner_id,
                 f"🗑 Сообщение удалено\nЧат: {chat_name}\nУдалений в событии: {len(event.message_ids)}\n\n{body}"[:3900],
-                reply_markup=event_markup,
+                reply_markup=app_markup("Посмотреть удалённые", view="deleted", chat_id=event.chat.id, message_id=(event.message_ids[0] if event.message_ids else None)),
             )
         except Exception:
             log.exception("Could not send deletion alert to owner=%s", owner_id)
