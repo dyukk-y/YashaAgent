@@ -147,6 +147,8 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
     class SettingsBody(BaseModel):
         archive_enabled: bool | None = None
         notifications_enabled: bool | None = None
+        notify_edits: bool | None = None
+        notify_deletions: bool | None = None
         interval_seconds: int | None = None
 
     @api.patch("/api/settings")
@@ -157,6 +159,10 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
             await db.set_archive_enabled(owner_id, body.archive_enabled)
         if body.notifications_enabled is not None:
             await db.set_notifications_enabled(owner_id, body.notifications_enabled)
+        if body.notify_edits is not None:
+            await db.set_notification_type_enabled(owner_id, "edits", body.notify_edits)
+        if body.notify_deletions is not None:
+            await db.set_notification_type_enabled(owner_id, "deletions", body.notify_deletions)
         if body.interval_seconds is not None:
             try:
                 await db.set_notification_interval(owner_id, body.interval_seconds)
