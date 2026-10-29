@@ -18,6 +18,16 @@ log = logging.getLogger(__name__)
 
 BTN_APP = "📂 Открыть YashaAgent"
 
+
+def connection_allows_archiving(connection: dict) -> bool:
+    """Message updates are permission-scoped by Telegram Business chat access.
+
+    BusinessBotRights.can_read_messages only permits marking incoming messages
+    as read; it is not a prerequisite for receiving/archiveing business updates.
+    """
+    return bool(connection.get("is_enabled"))
+
+
 def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     router = Router()
     event_markup = (
@@ -172,10 +182,10 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if not connection:
             log.warning("Ignoring business update: unknown connection_id=%s", connection_id)
             return
-        if not connection["is_enabled"] or not connection["can_read_messages"]:
+        if not connection_allows_archiving(connection):
             log.warning(
-                "Ignoring business update: connection=%s enabled=%s can_read_messages=%s",
-                connection_id, connection["is_enabled"], connection["can_read_messages"],
+                "Ignoring business update for disabled connection: connection=%s enabled=%s",
+                connection_id, connection["is_enabled"], connection.get("can_read_messages", False),
             )
             return
         owner_id = connection["owner_user_id"]
@@ -205,10 +215,10 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if not connection:
             log.warning("Ignoring business update: unknown connection_id=%s", connection_id)
             return
-        if not connection["is_enabled"] or not connection["can_read_messages"]:
+        if not connection_allows_archiving(connection):
             log.warning(
                 "Ignoring business update: connection=%s enabled=%s can_read_messages=%s",
-                connection_id, connection["is_enabled"], connection["can_read_messages"],
+                connection_id, connection["is_enabled"], connection.get("can_read_messages", False),
             )
             return
         owner_id = connection["owner_user_id"]

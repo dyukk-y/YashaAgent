@@ -172,3 +172,13 @@ def test_existing_media_table_migrates_album_metadata(tmp_path):
         assert "media_group_id" in columns
         assert row[0] == ""
     asyncio.run(run())
+
+
+def test_business_archive_does_not_require_can_read_messages():
+    from app.handlers import connection_allows_archiving
+
+    # Telegram's can_read_messages right is for marking messages as read,
+    # not permission to receive/archive Business message updates.
+    assert connection_allows_archiving({"is_enabled": True, "can_read_messages": False}) is True
+    assert connection_allows_archiving({"is_enabled": True, "can_read_messages": True}) is True
+    assert connection_allows_archiving({"is_enabled": False, "can_read_messages": True}) is False
