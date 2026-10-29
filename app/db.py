@@ -460,10 +460,19 @@ class ArchiveDB:
             await db.execute(f"UPDATE archived_messages SET is_deleted=1 WHERE connection_id=? AND owner_user_id=? AND chat_id=? AND message_id IN ({placeholders})", (connection_id, owner_id, chat_id, *message_ids))
             await db.commit()
 
-    async def search(self, owner_id: int, query: str, limit: int = 15) -> list[dict[str, Any]]:
+    async def search(self, owner_id: int | None, query: str, limit: int = 15) -> list[dict[str, Any]]:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
-            cur = await db.execute("SELECT chat_id,message_id,date_ts,sender_name,text,is_deleted FROM archived_messages WHERE owner_user_id=? AND text LIKE ? ORDER BY date_ts DESC LIMIT ?", (owner_id, f"%{query}%", limit))
+            if owner_id is None:
+                cur = await db.execute(
+                    "SELECT owner_user_id,chat_id,message_id,date_ts,sender_name,text,is_deleted FROM archived_messages WHERE text LIKE ? ORDER BY date_ts DESC LIMIT ?",
+                    (f"%{query}%", limit),
+                )
+            else:
+                cur = await db.execute(
+                    "SELECT owner_user_id,chat_id,message_id,date_ts,sender_name,text,is_deleted FROM archived_messages WHERE owner_user_id=? AND text LIKE ? ORDER BY date_ts DESC LIMIT ?",
+                    (owner_id, f"%{query}%", limit),
+                )
             return [dict(row) for row in await cur.fetchall()]
 
     async def recent_texts(self, owner_id: int, limit: int = 80) -> list[str]:
