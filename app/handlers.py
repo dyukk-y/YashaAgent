@@ -142,16 +142,14 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         name = " ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else "Контакт"
         old_text = (previous or {}).get("text", "") or "[текст не был сохранён]"
         new_text = message.text or message.caption or "[сообщение без текста]"
-        old_text = html.escape(old_text[:1200])
-        new_text = html.escape(new_text[:1200])
-        name = html.escape(name)
-        chat_name = html.escape(getattr(message.chat, "title", None) or getattr(message.chat, "first_name", None) or "Личный чат")
+        old_text = old_text[:1200]
+        new_text = new_text[:1200]
+        chat_name = getattr(message.chat, "title", None) or getattr(message.chat, "first_name", None) or "Личный чат"
         try:
             await message.bot.send_message(
                 owner_id,
-                f"✏️ <b>Сообщение изменено</b>\nЧат: {chat_name}\nАвтор: {name}\n\n<b>Было:</b>\n{old_text}\n\n<b>Стало:</b>\n{new_text}",
+                f"✏️ Сообщение изменено\nЧат: {chat_name}\nАвтор: {name}\n\nБыло:\n{old_text}\n\nСтало:\n{new_text}",
                 reply_markup=event_markup,
-                parse_mode="HTML",
             )
         except Exception:
             log.exception("Could not send edit alert to owner=%s", owner_id)
@@ -173,21 +171,20 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if deleted_rows:
             lines = []
             for row in deleted_rows[:10]:
-                text = html.escape((row["text"] or "[сообщение без текста]").replace("\n", " ")[:700])
-                sender_name = html.escape(row["sender_name"] or "Контакт")
+                text = (row["text"] or "[сообщение без текста]").replace("\n", " ")[:700]
+                sender_name = row["sender_name"] or "Контакт"
                 lines.append(f"• {sender_name}: {text}")
             if len(deleted_rows) > 10:
                 lines.append(f"…и ещё {len(deleted_rows) - 10}")
             body = "\n".join(lines)
         else:
             body = "Telegram сообщил об удалении, но текста этих сообщений нет в архиве."
-        chat_name = html.escape(getattr(event.chat, "title", None) or getattr(event.chat, "first_name", None) or "Личный чат")
+        chat_name = getattr(event.chat, "title", None) or getattr(event.chat, "first_name", None) or "Личный чат"
         try:
             await event.bot.send_message(
                 owner_id,
-                f"🗑 <b>Сообщение удалено</b>\nЧат: {chat_name}\nУдалений в событии: {len(event.message_ids)}\n\n{body}"[:3900],
+                f"🗑 Сообщение удалено\nЧат: {chat_name}\nУдалений в событии: {len(event.message_ids)}\n\n{body}"[:3900],
                 reply_markup=event_markup,
-                parse_mode="HTML",
             )
         except Exception:
             log.exception("Could not send deletion alert to owner=%s", owner_id)
