@@ -29,6 +29,8 @@ def test_archive_search_and_forget(tmp_path):
         db = ArchiveDB(str(tmp_path / "archive.sqlite3"))
         await db.initialize()
         await db.save_connection("bc-1", 42, True, True, 100)
+        await db.request_access(42, "test_user")
+        assert await db.review_access_request(42, "approved", 1)
         connection = await db.get_connection("bc-1")
         assert connection is not None
         await db.save_message(connection, FakeMessage())
