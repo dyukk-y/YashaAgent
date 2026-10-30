@@ -199,7 +199,7 @@ class ArchiveDB:
         async with aiosqlite.connect(self.path) as db:
             stats = {}
             queries = {
-                "users": "SELECT COUNT(*) FROM admin_user_registry",
+                "users": "SELECT COUNT(*) FROM user_access WHERE status='approved'",
                 "connected": "SELECT COUNT(DISTINCT owner_user_id) FROM business_connections WHERE is_enabled=1",
                 "chats": "SELECT COUNT(*) FROM (SELECT owner_user_id,chat_id FROM archived_messages UNION SELECT owner_user_id,chat_id FROM message_buffer)",
                 "messages": "SELECT COUNT(*) FROM archived_messages",
@@ -221,7 +221,7 @@ class ArchiveDB:
                     COUNT(DISTINCT c.connection_id) AS connections,
                     (SELECT COUNT(DISTINCT a.chat_id) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS chats,
                     (SELECT COUNT(*) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS messages
-                FROM admin_user_registry u LEFT JOIN business_connections c ON c.owner_user_id=u.owner_user_id
+                FROM admin_user_registry u JOIN user_access access ON access.owner_user_id=u.owner_user_id AND access.status='approved' LEFT JOIN business_connections c ON c.owner_user_id=u.owner_user_id
                 GROUP BY u.owner_user_id, u.owner_username, u.first_seen
                 ORDER BY u.first_seen DESC LIMIT ? OFFSET ?
             """, (limit, offset))
