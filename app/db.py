@@ -610,6 +610,12 @@ class ArchiveDB:
                                      WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id), 0)
                        ), 0) AS last_event_at
                 FROM all_chat_rows a WHERE a.owner_user_id=?
+                  AND (
+                      EXISTS (SELECT 1 FROM deleted_message_events d
+                              WHERE d.owner_user_id=a.owner_user_id AND d.chat_id=a.chat_id)
+                      OR EXISTS (SELECT 1 FROM archived_message_edits e
+                                 WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id)
+                  )
                   AND NOT EXISTS (SELECT 1 FROM hidden_chats h WHERE h.owner_user_id=a.owner_user_id AND h.chat_id=a.chat_id)
                 GROUP BY a.owner_user_id,a.chat_id ORDER BY last_date DESC
             """, (owner_id,))
