@@ -141,6 +141,8 @@ class ArchiveDB:
             media_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(archived_media)")).fetchall()}
             if "media_group_id" not in media_columns:
                 await db.execute("ALTER TABLE archived_media ADD COLUMN media_group_id TEXT NOT NULL DEFAULT ''")
+            if "is_edited" not in media_columns:
+                await db.execute("ALTER TABLE archived_media ADD COLUMN is_edited INTEGER NOT NULL DEFAULT 0")
             await db.execute("""INSERT OR IGNORE INTO admin_user_registry(owner_user_id, owner_username, first_seen)
                 SELECT owner_user_id, MAX(owner_username), MIN(updated_at) FROM business_connections GROUP BY owner_user_id""")
             await db.execute("""INSERT OR IGNORE INTO user_access(owner_user_id, owner_username, status, requested_at)
@@ -666,6 +668,11 @@ class ArchiveDB:
             await db.commit()
             return int(row[0])
 
+    async def mark_message_media_edited(self, connection_id: str, chat_id: int, message_id: int) -> None:
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("UPDATE archived_media SET is_edited=1 WHERE connection_id=? AND chat_id=? AND message_id=?", (connection_id, chat_id, message_id))
+            await db.commit()
+
     async def update_media_record(self, media_id: int, stored_path: str = "", status: str = "stored", error: str = "", file_size: int | None = None) -> None:
         async with aiosqlite.connect(self.path) as db:
             await db.execute("UPDATE archived_media SET stored_path=?, status=?, error=?, file_size=COALESCE(?,file_size) WHERE id=?",
@@ -699,7 +706,7 @@ class ArchiveDB:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
             sql = """SELECT m.id,m.owner_user_id,m.chat_id,m.message_id,m.media_type,m.media_group_id,m.file_name,m.mime_type,
-                            m.file_size,m.status,m.error,m.created_at,a.chat_title,a.sender_name,a.text,
+                            m.file_size,m.status,m.error,m.created_at,m.is_edited,a.chat_title,a.sender_name,a.text,
                             a.date_ts
                      FROM archived_media m
                      LEFT JOIN archived_messages a ON a.connection_id=m.connection_id AND a.owner_user_id=m.owner_user_id
