@@ -57,8 +57,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             elif message.animation:
                 await bot.send_animation(owner_id, message.animation.file_id, caption=caption[:1024], reply_markup=markup)
             elif message.video_note:
-                await bot.send_message(owner_id, caption, reply_markup=markup)
-                await bot.send_video_note(owner_id, message.video_note.file_id)
+                await bot.send_video_note(owner_id, message.video_note.file_id, reply_markup=markup)
             elif message.voice:
                 await bot.send_voice(owner_id, message.voice.file_id, caption=caption[:1024], reply_markup=markup)
             elif message.audio:
@@ -66,8 +65,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             elif message.document:
                 await bot.send_document(owner_id, message.document.file_id, caption=caption[:1024], reply_markup=markup)
             elif message.sticker:
-                await bot.send_message(owner_id, caption, reply_markup=markup)
-                await bot.send_sticker(owner_id, message.sticker.file_id)
+                await bot.send_sticker(owner_id, message.sticker.file_id, reply_markup=markup)
             else:
                 return False
             return True
@@ -102,7 +100,6 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         try:
             # Send the actual attachment immediately instead of a vague text-only alert.
             if message.video_note:
-                await message.bot.send_message(owner_id, header, disable_web_page_preview=True)
                 await message.bot.send_video_note(owner_id, message.video_note.file_id, reply_markup=markup)
             elif message.photo:
                 await message.bot.send_photo(owner_id, message.photo[-1].file_id, caption=header[:1024], reply_markup=markup)
@@ -117,7 +114,6 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             elif message.document:
                 await message.bot.send_document(owner_id, message.document.file_id, caption=header[:1024], reply_markup=markup)
             elif message.sticker:
-                await message.bot.send_message(owner_id, header, disable_web_page_preview=True)
                 await message.bot.send_sticker(owner_id, message.sticker.file_id, reply_markup=markup)
             else:
                 await message.bot.send_message(owner_id, header, reply_markup=markup, disable_web_page_preview=True)
@@ -506,7 +502,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         sender = message.from_user
         name = " ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else "Контакт"
         old_text = old_text or "[исходный текст не был сохранён]"
-        new_text = new_text or "[сообщение без текста]"
+        new_text = new_text or ""
         old_text = old_text[:1200]
         new_text = new_text[:1200]
         chat_name = getattr(message.chat, "title", None) or getattr(message.chat, "first_name", None) or "Личный чат"
@@ -527,7 +523,9 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
                     diff_parts.append("<b>" + html_escape("".join(new_words[j1:j2])) + "</b>")
         diff_text = "".join(diff_parts) or html_escape(new_text)
         try:
-            alert_text = (f"✏️ Изменено сообщение · {html_escape(chat_name)}\nАвтор: {html_escape(name)}\n\n{diff_text}")
+            alert_text = f"✏️ Изменено сообщение · {html_escape(chat_name)}\nАвтор: {html_escape(name)}"
+            if new_text:
+                alert_text += f"\n\n{diff_text}"
             markup = app_markup("Посмотреть изменённые", view="edited", chat_id=message.chat.id, message_id=message.message_id)
             attached = await send_event_media(message.bot, owner_id, message, alert_text, markup)
             if not attached:
@@ -592,19 +590,25 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         try:
             alert_text = f"🗑 Сообщение удалено\nЧат: {chat_name}\nУдалений в событии: {len(event.message_ids)}\n\n{body}"[:3900]
             markup = app_markup("Посмотреть удалённые", view="deleted", chat_id=event.chat.id, message_id=(event.message_ids[0] if event.message_ids else None))
-            await event.bot.send_message(owner_id, alert_text, reply_markup=markup)
-            # Send each deleted attachment as a separate Telegram preview. The file_id
-            # is taken from the buffered original update before it becomes unavailable.
+            media_sent = False
+            # Put the deletion context into the media caption to avoid a duplicate alert.
             for row in deleted_rows[:10]:
                 try:
                     original = Message.model_validate_json(row.get("raw_json") or "{}").as_(event.bot)
-                    await send_event_media(
-                        event.bot, owner_id, original,
-                        f"🗑 Удалено · {chat_name}\n{(row.get('sender_name') or 'Контакт')}\n\n{(row.get('text') or 'Медиафайл')}"[:1024],
+                    if not extract_media(original):
+                        continue
+                    caption = f"🗑 Удалено · {chat_name}\n{(row.get('sender_name') or 'Контакт')}"
+                    if row.get("text"):
+                        caption += f"\n\n{row['text']}"
+                    sent = await send_event_media(
+                        event.bot, owner_id, original, caption[:1024],
                         app_markup("Открыть событие", view="deleted", chat_id=event.chat.id, message_id=int(row["message_id"])),
                     )
+                    media_sent = media_sent or sent
                 except Exception:
                     log.exception("Could not send deleted media preview owner=%s message=%s", owner_id, row.get("message_id"))
+            if not media_sent:
+                await event.bot.send_message(owner_id, alert_text, reply_markup=markup)
         except Exception:
             log.exception("Could not send deletion alert to owner=%s", owner_id)
 
