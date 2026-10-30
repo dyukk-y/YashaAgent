@@ -131,9 +131,6 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     async def start_handler(message: Message) -> None:
         if not message.from_user:
             return
-        if message.from_user.id in settings.admins:
-            await message.answer(await admin_dashboard_text(), reply_markup=admin_keyboard())
-            return
         status = await db.request_access(message.from_user.id, message.from_user.username or "")
         if status == "approved":
             await message.answer("Доступ уже одобрен. Открой Mini App:", reply_markup=event_markup)
