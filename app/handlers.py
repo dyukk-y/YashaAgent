@@ -129,14 +129,18 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
 
     @router.message(CommandStart())
     async def start_handler(message: Message) -> None:
-        if message.from_user:
-            await db.register_admin_user(message.from_user.id, message.from_user.username or "")
-        text = (
-            "YashaAgent — архив удалённых и изменённых сообщений.\\n"
-            "Подключи бота в Telegram Business и открой приложение."
-        )
-        await message.answer(text, reply_markup=event_markup)
-
+        if not message.from_user:
+            return
+        if message.from_user.id in settings.admins:
+            await message.answer(await admin_dashboard_text(), reply_markup=admin_keyboard())
+            return
+        status = await db.request_access(message.from_user.id, message.from_user.username or "")
+        if status == "approved":
+            await message.answer("Доступ уже одобрен. Открой Mini App:", reply_markup=event_markup)
+        elif status == "rejected":
+            await message.answer("В доступе отказано. Если это ошибка, свяжитесь с главным администратором.")
+        else:
+            await message.answer("Заявка на доступ отправлена. Дождитесь решения главного администратора.")
     def admin_keyboard() -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📊 Обновить статистику", callback_data="adm:stats")],
