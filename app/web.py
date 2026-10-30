@@ -128,16 +128,23 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
         if not await db.owner_has_chat(user["id"], chat_id):
             raise HTTPException(status_code=404, detail="Чат не найден в вашем архиве")
         try:
-            chat = await request.app.state.telegram_bot.get_chat(chat_id)
+            bot = request.app.state.telegram_bot
+            chat = await bot.get_chat(chat_id)
             photo = getattr(chat, "photo", None)
-            file_id = getattr(photo, "small_file_id", None) if photo else None
+            file_id = getattr(photo, "big_file_id", None) or (getattr(photo, "small_file_id", None) if photo else None)
+            # Telegram may expose a private peer photo through getUserProfilePhotos
+            # even when getChat.photo is empty.
+            if not file_id and chat.type == "private":
+                photos = await bot.get_user_profile_photos(chat_id, limit=1)
+                if photos.total_count and photos.photos and photos.photos[0]:
+                    file_id = photos.photos[0][-1].file_id
             if not file_id:
-                raise HTTPException(status_code=404, detail="У чата нет доступной фотографии")
-            telegram_file = await request.app.state.telegram_bot.get_file(file_id)
+                raise HTTPException(status_code=404, detail="У собеседника нет доступной фотографии в Telegram")
+            telegram_file = await bot.get_file(file_id)
             if not telegram_file.file_path:
                 raise HTTPException(status_code=404, detail="Фото недоступно")
             buffer = BytesIO()
-            await request.app.state.telegram_bot.download_file(telegram_file.file_path, destination=buffer)
+            await bot.download_file(telegram_file.file_path, destination=buffer)
             return Response(buffer.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
         except HTTPException:
             raise
