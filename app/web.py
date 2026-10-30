@@ -336,8 +336,15 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
             raise HTTPException(status_code=404, detail="Файл не найден") from exc
         if not path.is_file():
             raise HTTPException(status_code=404, detail="Файл отсутствует в хранилище")
-        inline = (media.get("mime_type") or "").startswith("image/") and (media.get("mime_type") or "") != "image/svg+xml"
-        return FileResponse(path, media_type=media.get("mime_type") or "application/octet-stream",
+        mime = (media.get("mime_type") or "").lower()
+        media_type = (media.get("media_type") or "").lower()
+        # Browser previews (img/video/audio) require inline disposition. Documents
+        # remain attachments so they are downloaded rather than rendered as pages.
+        inline = (
+            (mime.startswith(("image/", "video/", "audio/")) and mime != "image/svg+xml")
+            or media_type in {"animation", "video_note", "voice", "sticker"}
+        )
+        return FileResponse(path, media_type=mime or "application/octet-stream",
                             filename=media.get("file_name") or path.name,
                             content_disposition_type="inline" if inline else "attachment")
 
