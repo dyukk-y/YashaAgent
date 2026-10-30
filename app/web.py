@@ -368,6 +368,17 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
                             filename=media.get("file_name") or path.name,
                             content_disposition_type="inline" if inline else "attachment")
 
+    @api.get("/header-avatar.jpg")
+    async def header_avatar():
+        avatar_path = WEB_ROOT / "header-avatar.jpg"
+        if not avatar_path.is_file():
+            raise HTTPException(status_code=404, detail="Аватар приложения не найден")
+        return FileResponse(
+            avatar_path,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
     @api.get("/")
     async def index():
         return FileResponse(WEB_ROOT / "index.html")
