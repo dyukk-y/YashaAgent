@@ -509,7 +509,17 @@ class ArchiveDB:
                 sql += " ORDER BY e.edited_at DESC, e.id DESC LIMIT ?"
                 args.append(limit)
             cur = await db.execute(sql, args)
-            return [dict(row) for row in await cur.fetchall()]
+            events = [dict(row) for row in await cur.fetchall()]
+            for event in events:
+                media_cur = await db.execute(
+                    """SELECT id, media_type, mime_type, file_name, status
+                       FROM archived_media
+                       WHERE owner_user_id=? AND chat_id=? AND message_id=?
+                       ORDER BY id""",
+                    (event["owner_user_id"], event["chat_id"], event["message_id"]),
+                )
+                event["media"] = [dict(row) for row in await media_cur.fetchall()]
+            return events
 
     async def owner_has_chat(self, owner_id: int, chat_id: int) -> bool:
         async with aiosqlite.connect(self.path) as db:
