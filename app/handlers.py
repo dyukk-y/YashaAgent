@@ -292,7 +292,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             return
         result = await db.find_registered_owner(username)
         admin_lookup_waiting.discard(message.from_user.id)
-        if not result:
+        if not result or result.get("status") != "approved" or not (result.get("connected") or result.get("chat_count")):
             await message.answer("Не найден одобренный пользователь с активным Business-подключением или сохранёнными чатами.")
             return
         await message.answer(
