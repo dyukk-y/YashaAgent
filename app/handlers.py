@@ -347,11 +347,13 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
                 }
         return None
 
-    async def archive_media(message: Message, connection: dict, owner_id: int) -> None:
+    async def archive_media(message: Message, connection: dict, owner_id: int, is_edited: bool = False) -> None:
         media = extract_media(message)
         if not media:
             return
         media_id = await db.save_media_record(connection, message, media)
+        if is_edited:
+            await db.mark_message_media_edited(connection["connection_id"], message.chat.id, message.message_id)
         root = Path(settings.media_path).resolve()
         existing = await db.media_file(owner_id, message.chat.id, message.message_id, media_id)
         if existing and existing.get("status") == "stored" and existing.get("stored_path"):
@@ -495,7 +497,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         )
         # Persist the current version even if ordinary archive storage is paused.
         await db.save_message(connection, message)
-        # Keep media only when Telegram confirms the message was deleted.
+        # Edited attachments are retained and marked separately in the media library.
+        await archive_media(message, connection, owner_id, is_edited=True)
 
         if (not await db.notifications_enabled(owner_id)
                 or not await db.notification_type_enabled(owner_id, "edits")):
