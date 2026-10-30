@@ -427,6 +427,9 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             )
             return
         owner_id = connection["owner_user_id"]
+        if await db.user_access_status(owner_id) != "approved":
+            log.info("Ignoring business update for unapproved owner=%s", owner_id)
+            return
         if await db.owner_archive_enabled(owner_id):
             if notify:
                 await db.buffer_message(connection, message)
@@ -464,6 +467,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             )
             return
         owner_id = connection["owner_user_id"]
+        if await db.user_access_status(owner_id) != "approved":
+            return
         # Edits can arrive before the ordinary-message buffer is flushed.
         # Promote first so the original version is available for the edit diff.
         await db.promote_buffered_messages(connection_id, message.chat.id, [message.message_id], owner_id)
@@ -535,6 +540,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if not connection or not connection["is_enabled"]:
             return
         owner_id = connection["owner_user_id"]
+        if await db.user_access_status(owner_id) != "approved":
+            return
         chat_title = getattr(event.chat, "title", None) or getattr(event.chat, "first_name", None) or getattr(event.chat, "username", None) or "Личный чат"
         deleted_rows = await db.get_archived_messages(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
         await db.promote_buffered_messages(event.business_connection_id, event.chat.id, event.message_ids, owner_id)
