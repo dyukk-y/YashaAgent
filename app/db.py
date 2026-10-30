@@ -431,11 +431,11 @@ class ArchiveDB:
     async def get_archived_message(self, connection_id: str, chat_id: int, message_id: int) -> dict[str, Any] | None:
         async with aiosqlite.connect(self.path) as db:
             db.row_factory = aiosqlite.Row
-            cur = await db.execute("SELECT sender_name,text FROM archived_messages WHERE connection_id=? AND chat_id=? AND message_id=?", (connection_id, chat_id, message_id))
+            cur = await db.execute("SELECT sender_name,text,raw_json FROM archived_messages WHERE connection_id=? AND chat_id=? AND message_id=?", (connection_id, chat_id, message_id))
             row = await cur.fetchone()
             if row:
                 return dict(row)
-            cur = await db.execute("SELECT sender_name,text FROM message_buffer WHERE connection_id=? AND chat_id=? AND message_id=?", (connection_id, chat_id, message_id))
+            cur = await db.execute("SELECT sender_name,text,raw_json FROM message_buffer WHERE connection_id=? AND chat_id=? AND message_id=?", (connection_id, chat_id, message_id))
             row = await cur.fetchone()
             return dict(row) if row else None
 
