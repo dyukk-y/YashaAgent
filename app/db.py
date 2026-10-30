@@ -169,6 +169,23 @@ class ArchiveDB:
             await db.commit()
             return str(row[0] if row else "pending")
 
+    async def claim_start_welcome(self, owner_id: int) -> bool:
+        """Return True only once per user, when claiming the initial /start welcome."""
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS start_welcome_sent (
+                    owner_user_id INTEGER PRIMARY KEY,
+                    sent_at INTEGER NOT NULL
+                )
+            """)
+            import time
+            cur = await db.execute(
+                "INSERT OR IGNORE INTO start_welcome_sent(owner_user_id, sent_at) VALUES(?, ?)",
+                (owner_id, int(time.time())),
+            )
+            await db.commit()
+            return cur.rowcount == 1
+
     async def user_access_status(self, owner_id: int) -> str:
         async with aiosqlite.connect(self.path) as db:
             row = await (await db.execute("SELECT status FROM user_access WHERE owner_user_id=?", (owner_id,))).fetchone()
