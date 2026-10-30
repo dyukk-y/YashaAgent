@@ -46,6 +46,35 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     event_markup = app_markup()
     admin_lookup_waiting: set[int] = set()
 
+    async def send_event_media(bot, owner_id: int, message: Message, caption: str, markup=None) -> bool:
+        """Send the original attachment in an edit/deletion alert when Telegram still exposes it."""
+        try:
+            if message.photo:
+                await bot.send_photo(owner_id, message.photo[-1].file_id, caption=caption[:1024], reply_markup=markup)
+            elif message.video:
+                await bot.send_video(owner_id, message.video.file_id, caption=caption[:1024], reply_markup=markup)
+            elif message.animation:
+                await bot.send_animation(owner_id, message.animation.file_id, caption=caption[:1024], reply_markup=markup)
+            elif message.video_note:
+                await bot.send_message(owner_id, caption, reply_markup=markup)
+                await bot.send_video_note(owner_id, message.video_note.file_id)
+            elif message.voice:
+                await bot.send_voice(owner_id, message.voice.file_id, caption=caption[:1024], reply_markup=markup)
+            elif message.audio:
+                await bot.send_audio(owner_id, message.audio.file_id, caption=caption[:1024], reply_markup=markup)
+            elif message.document:
+                await bot.send_document(owner_id, message.document.file_id, caption=caption[:1024], reply_markup=markup)
+            elif message.sticker:
+                await bot.send_message(owner_id, caption, reply_markup=markup)
+                await bot.send_sticker(owner_id, message.sticker.file_id)
+            else:
+                return False
+            return True
+        except Exception:
+            log.exception("Could not attach original media to event notification owner=%s chat=%s message=%s",
+                          owner_id, message.chat.id, message.message_id)
+            return False
+
     async def queue_notification(message: Message, owner_id: int) -> None:
         """Send a clear, immediate alert and attach the original media when possible."""
         if not await db.notifications_enabled(owner_id) or not await db.notification_type_enabled(owner_id, "edits"):
@@ -428,12 +457,11 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
                     diff_parts.append("<b>" + html_escape("".join(new_words[j1:j2])) + "</b>")
         diff_text = "".join(diff_parts) or html_escape(new_text)
         try:
-            await message.bot.send_message(
-                owner_id,
-                f"✏️ Изменено сообщение · {html_escape(chat_name)}\nАвтор: {html_escape(name)}\n\n{diff_text}",
-                parse_mode="HTML",
-                reply_markup=app_markup("Посмотреть изменённые", view="edited", chat_id=message.chat.id, message_id=message.message_id),
-            )
+            alert_text = (f"✏️ Изменено сообщение · {html_escape(chat_name)}\nАвтор: {html_escape(name)}\n\n{diff_text}")
+            markup = app_markup("Посмотреть изменённые", view="edited", chat_id=message.chat.id, message_id=message.message_id)
+            attached = await send_event_media(message.bot, owner_id, message, alert_text, markup)
+            if not attached:
+                await message.bot.send_message(owner_id, alert_text, parse_mode="HTML", reply_markup=markup)
         except Exception:
             log.exception("Could not send edit alert to owner=%s", owner_id)
 
@@ -477,11 +505,21 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             body = "Telegram сообщил об удалении, но текста этих сообщений нет в архиве."
         chat_name = getattr(event.chat, "title", None) or getattr(event.chat, "first_name", None) or "Личный чат"
         try:
-            await event.bot.send_message(
-                owner_id,
-                f"🗑 Сообщение удалено\nЧат: {chat_name}\nУдалений в событии: {len(event.message_ids)}\n\n{body}"[:3900],
-                reply_markup=app_markup("Посмотреть удалённые", view="deleted", chat_id=event.chat.id, message_id=(event.message_ids[0] if event.message_ids else None)),
-            )
+            alert_text = f"🗑 Сообщение удалено\nЧат: {chat_name}\nУдалений в событии: {len(event.message_ids)}\n\n{body}"[:3900]
+            markup = app_markup("Посмотреть удалённые", view="deleted", chat_id=event.chat.id, message_id=(event.message_ids[0] if event.message_ids else None))
+            await event.bot.send_message(owner_id, alert_text, reply_markup=markup)
+            # Send each deleted attachment as a separate Telegram preview. The file_id
+            # is taken from the buffered original update before it becomes unavailable.
+            for row in deleted_rows[:10]:
+                try:
+                    original = Message.model_validate_json(row.get("raw_json") or "{}").as_(event.bot)
+                    await send_event_media(
+                        event.bot, owner_id, original,
+                        f"🗑 Удалено · {chat_name}\n{(row.get('sender_name') or 'Контакт')}\n\n{(row.get('text') or 'Медиафайл')}"[:1024],
+                        app_markup("Открыть событие", view="deleted", chat_id=event.chat.id, message_id=int(row["message_id"])),
+                    )
+                except Exception:
+                    log.exception("Could not send deleted media preview owner=%s message=%s", owner_id, row.get("message_id"))
         except Exception:
             log.exception("Could not send deletion alert to owner=%s", owner_id)
 
