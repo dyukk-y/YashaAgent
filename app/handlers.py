@@ -144,8 +144,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     def admin_keyboard() -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="📊 Обновить статистику", callback_data="adm:stats")],
-            [InlineKeyboardButton(text="👥 Все пользователи", callback_data="adm:users:0"),
-             InlineKeyboardButton(text="🆕 Новые за 7 дней", callback_data="adm:new:0")],
+            [InlineKeyboardButton(text="📥 Запросы", callback_data="adm:requests")],
+            [InlineKeyboardButton(text="👥 Все пользователи", callback_data="adm:users:0")],
             [InlineKeyboardButton(text="💬 Все чаты", callback_data="adm:chats:0")],
             *([[InlineKeyboardButton(text=BTN_APP, web_app=WebAppInfo(url=settings.webapp_url))]] if settings.webapp_url.startswith("https://") else []),
         ])
