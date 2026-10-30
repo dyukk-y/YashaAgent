@@ -47,23 +47,57 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
     event_markup = app_markup()
     admin_lookup_waiting: set[int] = set()
 
-    async def send_event_media(bot, owner_id: int, message: Message, caption: str, markup=None) -> bool:
+    def limit_html_caption(value: str, limit: int = 1024) -> str:
+        """Trim HTML caption without cutting an entity or leaving formatting tags open."""
+        import html
+        tokens = re.findall(r"</?[a-zA-Z][^>]*>|&(?:#[0-9]+|#x[0-9a-fA-F]+|[a-zA-Z]+);|.", value, re.DOTALL)
+        output = []
+        opened = []
+        visible = 0
+        for token in tokens:
+            if token.startswith("</"):
+                tag = re.match(r"</([a-zA-Z]+)", token)
+                if tag and tag.group(1).lower() in opened:
+                    opened.remove(tag.group(1).lower())
+                output.append(token)
+            elif token.startswith("<"):
+                tag = re.match(r"<([a-zA-Z]+)", token)
+                if tag:
+                    name = tag.group(1).lower()
+                    if name not in {"br"} and not token.rstrip().endswith("/>"):
+                        opened.append(name)
+                output.append(token)
+            else:
+                if visible >= limit - 24:
+                    output.append("…")
+                    break
+                output.append(token)
+                visible += 1
+        for tag in reversed(opened):
+            output.append(f"</{tag}>")
+        return "".join(output)
+
+    async def send_event_media(bot, owner_id: int, message: Message, caption: str, markup=None, parse_mode=None) -> bool:
         """Send the original attachment in an edit/deletion alert when Telegram still exposes it."""
+        if parse_mode == "HTML":
+            caption = limit_html_caption(caption)
+        else:
+            caption = caption[:1024]
         try:
             if message.photo:
-                await bot.send_photo(owner_id, message.photo[-1].file_id, caption=caption[:1024], reply_markup=markup)
+                await bot.send_photo(owner_id, message.photo[-1].file_id, caption=caption, parse_mode=parse_mode, reply_markup=markup)
             elif message.video:
-                await bot.send_video(owner_id, message.video.file_id, caption=caption[:1024], reply_markup=markup)
+                await bot.send_video(owner_id, message.video.file_id, caption=caption, parse_mode=parse_mode, reply_markup=markup)
             elif message.animation:
-                await bot.send_animation(owner_id, message.animation.file_id, caption=caption[:1024], reply_markup=markup)
+                await bot.send_animation(owner_id, message.animation.file_id, caption=caption, parse_mode=parse_mode, reply_markup=markup)
             elif message.video_note:
                 await bot.send_video_note(owner_id, message.video_note.file_id, reply_markup=markup)
             elif message.voice:
-                await bot.send_voice(owner_id, message.voice.file_id, caption=caption[:1024], reply_markup=markup)
+                await bot.send_voice(owner_id, message.voice.file_id, caption=caption, parse_mode=parse_mode, reply_markup=markup)
             elif message.audio:
-                await bot.send_audio(owner_id, message.audio.file_id, caption=caption[:1024], reply_markup=markup)
+                await bot.send_audio(owner_id, message.audio.file_id, caption=caption, parse_mode=parse_mode, reply_markup=markup)
             elif message.document:
-                await bot.send_document(owner_id, message.document.file_id, caption=caption[:1024], reply_markup=markup)
+                await bot.send_document(owner_id, message.document.file_id, caption=caption, parse_mode=parse_mode, reply_markup=markup)
             elif message.sticker:
                 await bot.send_sticker(owner_id, message.sticker.file_id, reply_markup=markup)
             else:
@@ -503,8 +537,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         name = " ".join(x for x in [getattr(sender, "first_name", ""), getattr(sender, "last_name", "")] if x) if sender else "Контакт"
         old_text = old_text or "[исходный текст не был сохранён]"
         new_text = new_text or ""
-        old_text = old_text[:1200]
-        new_text = new_text[:1200]
+        old_text = old_text[:500]
+        new_text = new_text[:500]
         chat_name = getattr(message.chat, "title", None) or getattr(message.chat, "first_name", None) or "Личный чат"
         import difflib
         def html_escape(value: str) -> str:
@@ -527,7 +561,7 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             if new_text:
                 alert_text += f"\n\n{diff_text}"
             markup = app_markup("Посмотреть изменённые", view="edited", chat_id=message.chat.id, message_id=message.message_id)
-            attached = await send_event_media(message.bot, owner_id, message, alert_text, markup)
+            attached = await send_event_media(message.bot, owner_id, message, alert_text, markup, parse_mode="HTML")
             if not attached:
                 await message.bot.send_message(owner_id, alert_text, parse_mode="HTML", reply_markup=markup)
             # If the edit replaced an attachment, send the previous media too.
