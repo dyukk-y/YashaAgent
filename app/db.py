@@ -221,7 +221,7 @@ class ArchiveDB:
                 "users": "SELECT COUNT(*) FROM user_access WHERE status='approved'",
                 "connected": "SELECT COUNT(DISTINCT owner_user_id) FROM business_connections WHERE is_enabled=1",
                 "chats": "SELECT COUNT(*) FROM (SELECT owner_user_id,chat_id FROM archived_messages UNION SELECT owner_user_id,chat_id FROM message_buffer)",
-                "messages": "SELECT COUNT(*) FROM archived_messages",
+                "messages": "SELECT COUNT(*) FROM (SELECT owner_user_id,chat_id,message_id FROM deleted_message_events UNION SELECT owner_user_id,chat_id,message_id FROM archived_message_edits)",
                 "deleted": "SELECT COUNT(*) FROM deleted_message_events",
                 "edits": "SELECT COUNT(*) FROM archived_message_edits",
                 "media": "SELECT COUNT(*) FROM archived_media",
@@ -239,7 +239,7 @@ class ArchiveDB:
                     MAX(COALESCE(c.is_enabled,0)) AS connected,
                     COUNT(DISTINCT c.connection_id) AS connections,
                     (SELECT COUNT(DISTINCT a.chat_id) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS chats,
-                    (SELECT COUNT(*) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS messages
+                    (SELECT COUNT(*) FROM (SELECT chat_id,message_id FROM deleted_message_events d WHERE d.owner_user_id=u.owner_user_id UNION SELECT chat_id,message_id FROM archived_message_edits e WHERE e.owner_user_id=u.owner_user_id)) AS messages
                 FROM admin_user_registry u JOIN user_access access ON access.owner_user_id=u.owner_user_id AND access.status='approved' LEFT JOIN business_connections c ON c.owner_user_id=u.owner_user_id
                 GROUP BY u.owner_user_id, u.owner_username, u.first_seen
                 ORDER BY u.first_seen DESC LIMIT ? OFFSET ?
@@ -254,7 +254,7 @@ class ArchiveDB:
                     MAX(COALESCE(c.is_enabled,0)) AS connected,
                     COUNT(DISTINCT c.connection_id) AS connections,
                     (SELECT COUNT(DISTINCT a.chat_id) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS chats,
-                    (SELECT COUNT(*) FROM archived_messages a WHERE a.owner_user_id=u.owner_user_id) AS messages
+                    (SELECT COUNT(*) FROM (SELECT chat_id,message_id FROM deleted_message_events d WHERE d.owner_user_id=u.owner_user_id UNION SELECT chat_id,message_id FROM archived_message_edits e WHERE e.owner_user_id=u.owner_user_id)) AS messages
                 FROM admin_user_registry u LEFT JOIN business_connections c ON c.owner_user_id=u.owner_user_id
                 WHERE u.first_seen >= strftime('%s','now') - 604800
                 GROUP BY u.owner_user_id, u.owner_username, u.first_seen
@@ -830,8 +830,16 @@ class ArchiveDB:
 
     async def stats(self, owner_id: int) -> tuple[int, int]:
         async with aiosqlite.connect(self.path) as db:
-            cur = await db.execute("SELECT COUNT(*), SUM(is_deleted) FROM archived_messages WHERE owner_user_id=?", (owner_id,))
-            total, deleted = await cur.fetchone()
+            cur = await db.execute("""
+                SELECT COUNT(*) FROM (
+                    SELECT chat_id,message_id FROM deleted_message_events WHERE owner_user_id=?
+                    UNION
+                    SELECT chat_id,message_id FROM archived_message_edits WHERE owner_user_id=?
+                )
+            """, (owner_id, owner_id))
+            total = (await cur.fetchone())[0]
+            cur = await db.execute("SELECT COUNT(DISTINCT chat_id || ':' || message_id) FROM deleted_message_events WHERE owner_user_id=?", (owner_id,))
+            deleted = (await cur.fetchone())[0]
             return int(total or 0), int(deleted or 0)
 
     async def owner_media_paths(self, owner_id: int) -> list[str]:
