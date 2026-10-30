@@ -6,9 +6,9 @@ class Settings(BaseSettings):
     admin_user_ids: str = ""
     database_path: str = "data/yashaagent.sqlite3"
     media_path: str = "/data/media"
-    media_max_file_mb: int = 20
-    media_quota_mb: int = 1024
-    media_retention_days: int = 365
+    media_max_file_mb: int = 0
+    media_quota_mb: int = 0
+    media_retention_days: int = 0
     log_level: str = "INFO"
     ai_api_key: str = ""
     ai_model: str = "gpt-4.1-mini"
