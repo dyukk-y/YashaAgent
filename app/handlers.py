@@ -8,6 +8,7 @@ from collections import defaultdict
 
 from aiogram import Router
 from aiogram.filters import Command, CommandStart
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import (
     BusinessConnection, BusinessMessagesDeleted, CallbackQuery, InlineKeyboardButton,
     InlineKeyboardMarkup, Message, WebAppInfo,
@@ -279,9 +280,15 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
                 keyboard = [rows] if rows else []
                 keyboard.append([InlineKeyboardButton(text="⌂ Панель", callback_data="adm:stats")])
                 await query.message.edit_text(text[:3900], reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+        except TelegramBadRequest as exc:
+            if "message is not modified" in str(exc).lower():
+                # Telegram reports this when the requested panel is already displayed.
+                return
+            log.exception("Admin dashboard callback failed")
+            await query.answer("Не удалось обновить панель", show_alert=True)
         except Exception:
             log.exception("Admin dashboard callback failed")
-            await query.message.answer("Не удалось загрузить раздел. Попробуйте ещё раз.")
+            await query.answer("Не удалось загрузить раздел", show_alert=True)
 
     @router.message(lambda message: bool(message.from_user and message.text and message.text.strip().startswith("@")))
     async def admin_username_lookup_handler(message: Message) -> None:
