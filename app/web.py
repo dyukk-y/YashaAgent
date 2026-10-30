@@ -74,7 +74,8 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
     @api.get("/api/me")
     async def me(request: Request):
         user = await owner_for(request)
-        return {"user": user, "is_admin": user["id"] in request.app.state.admin_ids}
+        bot_user = await request.app.state.telegram_bot.get_me()
+        return {"user": user, "is_admin": user["id"] in request.app.state.admin_ids, "bot_username": bot_user.username or ""}
 
     async def require_admin(request: Request) -> dict:
         user = await owner_for(request)
