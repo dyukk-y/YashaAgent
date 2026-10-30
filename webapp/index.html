@@ -516,6 +516,30 @@ body{background:radial-gradient(ellipse at 12% 0%,rgba(0,105,255,.19),transparen
 .pill.edit{color:#80c4ff!important;border-color:rgba(0,123,255,.45)!important;background:rgba(0,123,255,.1)!important}
 :focus-visible{outline-color:#168cff!important}
 
+
+/* Unified restrained blue-black theme */
+:root{color-scheme:dark!important;--bg:#050a13!important;--fg:#e8f1ff!important;--card:#0b1626!important;--mute:#8298b5!important;--line:#172b43!important;--danger:#ff718b!important;--violet:#58a6ff!important;--accent:#087bff!important;--mint:#58a6ff!important}
+html,body{background:#050a13!important;color:#e8f1ff!important}
+body{background:radial-gradient(ellipse at 50% -15%,rgba(0,102,220,.13),transparent 55%),#050a13!important}
+.top{background:rgba(5,10,19,.96)!important;border-bottom:1px solid #172b43!important}
+.brand .logo,.avatar{background:linear-gradient(145deg,#071a30,#0757a8)!important;color:#eaf4ff!important;border:1px solid #1678d2!important;box-shadow:0 0 12px rgba(0,100,220,.14)!important}
+.status{color:#69b8ff!important;border-color:#174b7a!important;background:#081a2d!important}
+.search,.search input,.composer textarea{background:#081423!important;border-color:#183957!important;color:#e8f1ff!important}
+.tab{background:#081423!important;border-color:#183957!important;color:#a9c6e5!important}
+.tab.active,.tab:hover{background:#075fc0!important;border-color:#168cff!important;color:white!important;box-shadow:none!important}
+.chat-row,.conversation,.event-card,.media-stat,.media-toolbar,.media-card,.setting-card{background:#081423!important;border-color:#172f4a!important}
+.chat-row:hover{background:#0b1b30!important;border-color:#1767ad!important}
+.chat-item:hover,.chat-item.selected{background:rgba(0,111,220,.1)!important}
+.bubble{background:#0b1a2c!important;border-color:#1a4165!important;color:#e8f1ff!important}
+.bubble.mine{background:#0757a8!important;border-color:#1678d2!important;color:white!important}
+.send,.media-card-actions button{background:#0768cf!important;border-color:#168cff!important;color:#fff!important;box-shadow:none!important}
+.back{border-color:#1b4b76!important;color:#91caff!important}
+.event-open,.history-btn,.media-open,.hide-chat{color:#8bc7ff!important;border-color:#1b4b76!important;background:#081a2d!important}
+.event-label,.event-type.edited,.pill.edit{color:#80c2ff!important;background:rgba(0,112,220,.1)!important;border-color:#1b4b76!important}
+.media-filter-select{background:#081423!important;color:#e8f1ff!important;border-color:#1b4b76!important}
+.event-body,.event-diff,.previous-snippet{background:rgba(0,100,200,.06)!important;border-color:#1b3c5d!important}
+.setting-option input{accent-color:#087bff!important}
+
 </style>
 </head>
 <body>
@@ -541,12 +565,26 @@ const timeLabel=ts=>ts?new Date(ts*1000).toLocaleTimeString('ru-RU',{hour:'2-dig
 function focusMessage(messageId){if(!messageId)return;setTimeout(()=>{const target=$('message-'+Number(messageId));if(target){target.scrollIntoView({behavior:'smooth',block:'center'});target.classList.add('event-focus');setTimeout(()=>target.classList.remove('event-focus'),2600)}},180)}
 async function handleDeepLink(){const params=new URLSearchParams(window.location.search);const chatId=Number(params.get('chat_id'));const messageId=Number(params.get('message_id'));if(!chatId)return;const view=params.get('view');if(view==='deleted'||view==='edited'){filter=view;$('tabs').querySelectorAll('.tab').forEach(b=>{b.classList.toggle('active',b.dataset.filter===view)});await loadEvents(view)}await openChat(chatId);if(messageId)focusMessage(messageId)}
 async function hydrateAvatar(node,url){try{const response=await fetch(url,{headers:{'X-Telegram-Init-Data':initData}});if(!response.ok)return;const blob=await response.blob();const objectUrl=URL.createObjectURL(blob);const img=document.createElement('img');img.alt='Фото профиля';img.src=objectUrl;img.style.width='100%';img.style.height='100%';img.style.objectFit='cover';node.replaceChildren(img)}catch(e){}}
-function renderChats(items){items=items||(adminMode?adminChats:chats);const list=$('chatList');if(!items.length){list.innerHTML='<div class="empty"><div class="empty-icon">🫧</div><b>Пока здесь пусто</b><p>Диалоги появятся после получения сообщений через подключение Telegram Business.</p></div>';return}
-list.innerHTML=items.map(c=>{const name=c.title||c.name||('Чат '+c.chat_id);const mark=(c.deleted_count?'<span class="pill">🗑 '+c.deleted_count+' удал.</span>':'')+(c.edited_count?'<span class="pill edit">✎ '+c.edited_count+' измен.</span>':'')+(adminMode&&c.is_hidden?'<span class="pill">Скрыт владельцем</span>':'');const owner=adminMode?'<div class="preview">Владелец ID: '+esc(c.owner_user_id)+'</div>':'';return '<div class="chat-row"><button class="chat-item '+(activeChat&&Number(activeChat.chat_id)===Number(c.chat_id)&&(!adminMode||Number(activeChat.owner_user_id)===Number(c.owner_user_id))?'selected':'')+'" data-chat="'+c.chat_id+'" data-owner="'+(adminMode?c.owner_user_id:'')+'"><div class="avatar">'+esc((name.trim()[0]||'?').toUpperCase())+'</div><div class="chat-meta"><div class="chat-title">'+esc(name)+'</div>'+owner+'<div class="preview">'+Number(c.message_count||0)+' сообщений в чате'+'</div>'+mark+'</div><div class="right-meta">'+esc(c.last_event_at?dateTimeLabel(c.last_event_at):'Событий пока нет')</div><span class="chat-chevron">›</span></button></div>'}).join('');
-list.querySelectorAll('[data-chat]').forEach(b=>b.addEventListener('click',()=>adminMode?openAdminChat(Number(b.dataset.owner),Number(b.dataset.chat)):openChat(Number(b.dataset.chat))));
-list.querySelectorAll('.chat-item[data-chat]').forEach(b=>{const avatar=b.querySelector('.avatar');if(avatar&&!b.dataset.avatarRequested){b.dataset.avatarRequested='1';hydrateAvatar(avatar,'/api/chats/'+Number(b.dataset.chat)+'/avatar')}});
-
-
+function renderChats(items){
+ items=items||(adminMode?adminChats:chats);
+ const list=$('chatList');
+ if(!items.length){
+  list.innerHTML='<div class="empty"><div class="empty-icon">🫧</div><b>Пока здесь пусто</b><p>Здесь отображаются только диалоги с удалёнными или изменёнными сообщениями.</p></div>';
+  return;
+ }
+ list.innerHTML=items.map(c=>{
+  const name=c.title||c.name||('Чат '+c.chat_id);
+  const mark=(c.deleted_count?'<span class="pill">🗑 '+c.deleted_count+' удал.</span>':'')+(c.edited_count?'<span class="pill edit">✎ '+c.edited_count+' измен.</span>':'')+(adminMode&&c.is_hidden?'<span class="pill">Скрыт владельцем</span>':'');
+  const owner=adminMode?'<div class="preview">Владелец ID: '+esc(c.owner_user_id)+'</div>':'';
+  const count=Number(c.message_count||0);
+  const last=c.last_event_at?dateTimeLabel(c.last_event_at):'Событий пока нет';
+  return `<div class="chat-row"><button class="chat-item ${activeChat&&Number(activeChat.chat_id)===Number(c.chat_id)&&(!adminMode||Number(activeChat.owner_user_id)===Number(c.owner_user_id))?'selected':''}" data-chat="${Number(c.chat_id)}" data-owner="${adminMode?Number(c.owner_user_id):''}"><div class="avatar">${esc((name.trim()[0]||'?').toUpperCase())}</div><div class="chat-meta"><div class="chat-title">${esc(name)}</div>${owner}<div class="preview">${count} сообщений в архиве</div>${mark}</div><div class="right-meta">${esc(last)}</div><span class="chat-chevron">›</span></button></div>`;
+ }).join('');
+ list.querySelectorAll('[data-chat]').forEach(b=>b.addEventListener('click',()=>adminMode?openAdminChat(Number(b.dataset.owner),Number(b.dataset.chat)):openChat(Number(b.dataset.chat))));
+ list.querySelectorAll('.chat-item[data-chat]').forEach(b=>{
+  const avatar=b.querySelector('.avatar');
+  if(avatar&&!b.dataset.avatarRequested){b.dataset.avatarRequested='1';hydrateAvatar(avatar,'/api/chats/'+Number(b.dataset.chat)+'/avatar')}
+ });
 }
 async function loadNotificationSettings(){const list=$('chatList');list.innerHTML='<div class="spinner">Загружаю настройки…</div>';try{const s=await api('/api/settings');list.innerHTML='<div class="settings-panel"><div class="setting-card"><b>Уведомления</b><p class="preview">Выберите, о каких событиях бот будет сообщать в Telegram. Архивирование продолжает работать независимо от уведомлений.</p><label class="setting-option"><input type="checkbox" id="notifyMaster" '+(s.notifications_enabled?'checked':'')+'> Все уведомления</label><label class="setting-option"><input type="checkbox" id="notifyEdits" '+(s.notify_edits?'checked':'')+'> Изменения сообщений</label><label class="setting-option"><input type="checkbox" id="notifyDeletes" '+(s.notify_deletions?'checked':'')+'> Удаление сообщений</label><div class="notice" id="settingsStatus">Изменения сохраняются автоматически.</div></div><div class="setting-card"><b>Архив</b><p class="preview">Сохранено сообщений: '+Number(s.total_messages||0)+' · удалённых: '+Number(s.deleted_messages||0)+'</p><p class="preview">История правок сохраняется по версиям. Поиск поддерживает несколько слов и фразы в кавычках.</p></div></div>';const save=async(key,value)=>{const status=$('settingsStatus');status.textContent='Сохраняю…';status.classList.remove('error');try{await api('/api/settings',{method:'PATCH',body:JSON.stringify({[key]:value})});status.textContent='Настройки сохранены.'}catch(e){status.textContent='Ошибка: '+e.message;status.classList.add('error')}};$('notifyMaster').addEventListener('change',e=>save('notifications_enabled',e.target.checked));$('notifyEdits').addEventListener('change',e=>save('notify_edits',e.target.checked));$('notifyDeletes').addEventListener('change',e=>save('notify_deletions',e.target.checked));}catch(e){list.innerHTML='<div class="empty error">'+esc(e.message)+'</div>'}}
 async function loadChats(){try{const d=await api('/api/chats');chats=d.chats||[];renderChats()}catch(e){$('chatList').innerHTML='<div class="empty error">'+esc(e.message)+'<p>Откройте Mini App из меню бота и убедитесь, что сервер настроен на HTTPS.</p></div>'}}
