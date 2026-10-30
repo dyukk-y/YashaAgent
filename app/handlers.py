@@ -133,7 +133,9 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             return
         status = await db.request_access(message.from_user.id, message.from_user.username or "")
         if status == "approved":
-            await message.answer("Доступ уже одобрен. Открой Mini App:", reply_markup=event_markup)
+            if await db.claim_start_welcome(message.from_user.id):
+                await message.answer("Доступ одобрен. Откройте Mini App:", reply_markup=event_markup)
+            return
         elif status == "rejected":
             await message.answer("В доступе отказано. Если это ошибка, свяжитесь с главным администратором.")
         else:
