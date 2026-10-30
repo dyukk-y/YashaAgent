@@ -185,6 +185,36 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
                 await query.message.edit_text(await admin_dashboard_text(), reply_markup=admin_keyboard())
                 return
             section = action[1] if len(action) > 1 else "stats"
+            if section == "requests":
+                requests = await db.pending_access_requests(50, 0)
+                keyboard = []
+                for item in requests:
+                    label = "@" + item["owner_username"] if item.get("owner_username") else "ID " + str(item["owner_user_id"])
+                    keyboard.append([InlineKeyboardButton(text=label[:55], callback_data="adm:request:" + str(item["owner_user_id"]))])
+                keyboard.append([InlineKeyboardButton(text="↻ Обновить", callback_data="adm:requests"), InlineKeyboardButton(text="⌂ Панель", callback_data="adm:stats")])
+                await query.message.edit_text("📥 ЗАПРОСЫ НА ДОСТУП · " + str(len(requests)) if requests else "📥 Новых запросов нет.", reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+                return
+            if section == "request" and len(action) == 3:
+                owner_id = int(action[2])
+                item = next((r for r in await db.pending_access_requests(100, 0) if int(r["owner_user_id"]) == owner_id), None)
+                if not item:
+                    await query.message.answer("Заявка уже обработана или не найдена.")
+                    return
+                username = "@" + item["owner_username"] if item.get("owner_username") else "без username"
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ Принять", callback_data="adm:approve:" + str(owner_id)), InlineKeyboardButton(text="❌ Отказать", callback_data="adm:reject:" + str(owner_id))],
+                    [InlineKeyboardButton(text="← К запросам", callback_data="adm:requests")]
+                ])
+                await query.message.edit_text("Заявка на доступ\nПользователь: " + username + "\nTelegram ID: " + str(owner_id), reply_markup=keyboard)
+                return
+            if section in {"approve", "reject"} and len(action) == 3:
+                owner_id = int(action[2])
+                status = "approved" if section == "approve" else "rejected"
+                changed = await db.review_access_request(owner_id, status, query.from_user.id)
+                label = "Доступ одобрен." if status == "approved" else "В доступе отказано."
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="← К запросам", callback_data="adm:requests")], [InlineKeyboardButton(text="⌂ Панель", callback_data="adm:stats")]])
+                await query.message.edit_text(("✅ " if changed and status == "approved" else "❌ " if changed else "") + (label if changed else "Заявка уже обработана."), reply_markup=keyboard)
+                return
             if section == "user" and len(action) == 3:
                 try:
                     owner_id = int(action[2])
