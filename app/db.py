@@ -141,10 +141,10 @@ class ArchiveDB:
             media_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(archived_media)")).fetchall()}
             if "media_group_id" not in media_columns:
                 await db.execute("ALTER TABLE archived_media ADD COLUMN media_group_id TEXT NOT NULL DEFAULT ''")
-            await db.execute("""INSERT OR IGNORE INTO user_access(owner_user_id, owner_username, status, requested_at)
-                SELECT owner_user_id, owner_username, 'approved', first_seen FROM admin_user_registry""")
             await db.execute("""INSERT OR IGNORE INTO admin_user_registry(owner_user_id, owner_username, first_seen)
                 SELECT owner_user_id, MAX(owner_username), MIN(updated_at) FROM business_connections GROUP BY owner_user_id""")
+            await db.execute("""INSERT OR IGNORE INTO user_access(owner_user_id, owner_username, status, requested_at)
+                SELECT owner_user_id, owner_username, 'approved', first_seen FROM admin_user_registry""")
             await db.commit()
 
     async def register_admin_user(self, owner_id: int, username: str = "", seen_at: int | None = None) -> None:
