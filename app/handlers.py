@@ -446,7 +446,6 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
                 await db.buffer_message(connection, message)
             else:
                 await db.save_message(connection, message)
-                await archive_media(message, connection, owner_id)
             log.info(
                 "Archived business message owner=%s chat=%s message=%s",
                 owner_id, message.chat.id, message.message_id,
@@ -496,7 +495,8 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         )
         # Persist the current version even if ordinary archive storage is paused.
         await db.save_message(connection, message)
-        await archive_media(message, connection, owner_id)
+        # Keep media only when Telegram confirms the message was deleted.
+
         if (not await db.notifications_enabled(owner_id)
                 or not await db.notification_type_enabled(owner_id, "edits")):
             return
