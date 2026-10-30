@@ -2,11 +2,12 @@ import hashlib
 import hmac
 import json
 import time
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import parse_qsl
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from app.db import ArchiveDB
@@ -37,7 +38,7 @@ def verify_init_data(init_data: str, bot_token: str, max_age: int = 86400) -> di
         user_id = int(user["id"])
     except (KeyError, ValueError, TypeError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=401, detail="Не удалось определить пользователя Telegram") from exc
-    return {"id": user_id, "first_name": user.get("first_name", ""), "username": user.get("username", "")}
+    return {"id": user_id, "first_name": user.get("first_name", ""), "username": user.get("username", ""), "photo_url": user.get("photo_url", "")}
 
 
 def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | None = None, media_root: str = "/data/media") -> FastAPI:
@@ -120,6 +121,28 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
     async def chats(request: Request):
         user = await owner_for(request)
         return {"chats": await db.list_chats(user["id"])}
+
+    @api.get("/api/chats/{chat_id}/avatar")
+    async def chat_avatar(chat_id: int, request: Request):
+        user = await owner_for(request)
+        if not await db.owner_has_chat(user["id"], chat_id):
+            raise HTTPException(status_code=404, detail="Чат не найден в вашем архиве")
+        try:
+            chat = await request.app.state.telegram_bot.get_chat(chat_id)
+            photo = getattr(chat, "photo", None)
+            file_id = getattr(photo, "small_file_id", None) if photo else None
+            if not file_id:
+                raise HTTPException(status_code=404, detail="У чата нет доступной фотографии")
+            telegram_file = await request.app.state.telegram_bot.get_file(file_id)
+            if not telegram_file.file_path:
+                raise HTTPException(status_code=404, detail="Фото недоступно")
+            buffer = BytesIO()
+            await request.app.state.telegram_bot.download_file(telegram_file.file_path, destination=buffer)
+            return Response(buffer.getvalue(), media_type="image/jpeg", headers={"Cache-Control": "private, max-age=3600"})
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=404, detail="Telegram не предоставил фотографию этого собеседника") from exc
 
     @api.get("/api/settings")
     async def get_settings(request: Request):
