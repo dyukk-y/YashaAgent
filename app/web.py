@@ -64,7 +64,12 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
 
     async def owner_for(request: Request) -> dict:
         init_data = request.headers.get("X-Telegram-Init-Data", "")
-        return verify_init_data(init_data, request.app.state.bot_token)
+        user = verify_init_data(init_data, request.app.state.bot_token)
+        if user["id"] not in request.app.state.admin_ids:
+            status = await db.user_access_status(user["id"])
+            if status != "approved":
+                raise HTTPException(status_code=403, detail="Доступ ещё не одобрен главным администратором")
+        return user
 
     @api.get("/api/me")
     async def me(request: Request):
