@@ -28,6 +28,14 @@ class ArchiveDB:
                     owner_username TEXT NOT NULL DEFAULT '',
                     first_seen INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS user_access (
+                    owner_user_id INTEGER PRIMARY KEY,
+                    owner_username TEXT NOT NULL DEFAULT '',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    requested_at INTEGER NOT NULL,
+                    reviewed_at INTEGER,
+                    reviewed_by INTEGER
+                );
                 CREATE TABLE IF NOT EXISTS owner_settings (
                     owner_user_id INTEGER PRIMARY KEY,
                     archive_enabled INTEGER NOT NULL DEFAULT 1,
@@ -133,6 +141,8 @@ class ArchiveDB:
             media_columns = {row[1] for row in await (await db.execute("PRAGMA table_info(archived_media)")).fetchall()}
             if "media_group_id" not in media_columns:
                 await db.execute("ALTER TABLE archived_media ADD COLUMN media_group_id TEXT NOT NULL DEFAULT ''")
+            await db.execute("""INSERT OR IGNORE INTO user_access(owner_user_id, owner_username, status, requested_at)
+                SELECT owner_user_id, owner_username, 'approved', first_seen FROM admin_user_registry""")
             await db.execute("""INSERT OR IGNORE INTO admin_user_registry(owner_user_id, owner_username, first_seen)
                 SELECT owner_user_id, MAX(owner_username), MIN(updated_at) FROM business_connections GROUP BY owner_user_id""")
             await db.commit()
@@ -148,6 +158,43 @@ class ArchiveDB:
                 (owner_id, normalized, timestamp))
             await db.commit()
 
+    async def request_access(self, owner_id: int, username: str = "", seen_at: int | None = None) -> str:
+        import time
+        timestamp = int(seen_at or time.time())
+        normalized = username.strip().lstrip("@").lower()
+        async with aiosqlite.connect(self.path) as db:
+            await db.execute("""INSERT INTO admin_user_registry(owner_user_id, owner_username, first_seen) VALUES(?,?,?) ON CONFLICT(owner_user_id) DO UPDATE SET owner_username=CASE WHEN excluded.owner_username!='' THEN excluded.owner_username ELSE admin_user_registry.owner_username END""", (owner_id, normalized, timestamp))
+            await db.execute("""INSERT INTO user_access(owner_user_id, owner_username, status, requested_at) VALUES(?,?,'pending',?) ON CONFLICT(owner_user_id) DO UPDATE SET owner_username=CASE WHEN excluded.owner_username!='' THEN excluded.owner_username ELSE user_access.owner_username END""", (owner_id, normalized, timestamp))
+            row = await (await db.execute("SELECT status FROM user_access WHERE owner_user_id=?", (owner_id,))).fetchone()
+            await db.commit()
+            return str(row[0] if row else "pending")
+
+    async def user_access_status(self, owner_id: int) -> str:
+        async with aiosqlite.connect(self.path) as db:
+            row = await (await db.execute("SELECT status FROM user_access WHERE owner_user_id=?", (owner_id,))).fetchone()
+            return str(row[0]) if row else "pending"
+
+    async def pending_access_requests(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            rows = await (await db.execute("SELECT owner_user_id, owner_username, requested_at FROM user_access WHERE status='pending' ORDER BY requested_at ASC LIMIT ? OFFSET ?", (limit, offset))).fetchall()
+            return [dict(row) for row in rows]
+
+    async def review_access_request(self, owner_id: int, status: str, admin_id: int) -> bool:
+        if status not in {"approved", "rejected"}:
+            raise ValueError("Invalid access status")
+        import time
+        async with aiosqlite.connect(self.path) as db:
+            cur = await db.execute("UPDATE user_access SET status=?, reviewed_at=?, reviewed_by=? WHERE owner_user_id=? AND status='pending'", (status, int(time.time()), admin_id, owner_id))
+            await db.commit()
+            return cur.rowcount > 0
+
+    async def find_registered_owner(self, username: str) -> dict[str, Any] | None:
+        normalized = username.strip().lstrip("@").lower()
+        async with aiosqlite.connect(self.path) as db:
+            db.row_factory = aiosqlite.Row
+            row = await (await db.execute("SELECT u.owner_user_id, u.owner_username, a.status, EXISTS(SELECT 1 FROM business_connections c WHERE c.owner_user_id=u.owner_user_id AND c.is_enabled=1) AS connected, (SELECT COUNT(DISTINCT chat_id) FROM (SELECT chat_id FROM archived_messages WHERE owner_user_id=u.owner_user_id UNION SELECT chat_id FROM message_buffer WHERE owner_user_id=u.owner_user_id)) AS chat_count FROM admin_user_registry u JOIN user_access a ON a.owner_user_id=u.owner_user_id WHERE lower(u.owner_username)=? LIMIT 1", (normalized,))).fetchone()
+            return dict(row) if row else None
     async def admin_stats(self) -> dict[str, int]:
         async with aiosqlite.connect(self.path) as db:
             stats = {}
