@@ -197,10 +197,8 @@ def test_buffered_messages_are_listed_but_not_permanently_archived_until_event(t
         message = FakeMessage()
         await db.buffer_message(connection, message)
 
-        chats = await db.list_chats(42)
-        assert len(chats) == 1
-        assert chats[0]["chat_id"] == 900
-        assert chats[0]["message_count"] == 0
+        # Incoming messages alone must not create an archive chat entry.
+        assert await db.list_chats(42) == []
         assert await db.chat_messages(42, 900) == []
         rows = await db.get_archived_messages("bc-1", 900, [3], 42)
         assert rows[0]["text"] == "hello archive"
@@ -208,6 +206,8 @@ def test_buffered_messages_are_listed_but_not_permanently_archived_until_event(t
 
         await db.promote_buffered_messages("bc-1", 900, [3], 42)
         assert len(await db.chat_messages(42, 900)) == 1
+        # Promoting a regular message still does not create a chat without edit/delete events.
+        assert await db.list_chats(42) == []
         assert await db.list_chats_admin()
 
     asyncio.run(run())
