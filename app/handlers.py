@@ -462,6 +462,19 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
             attached = await send_event_media(message.bot, owner_id, message, alert_text, markup)
             if not attached:
                 await message.bot.send_message(owner_id, alert_text, parse_mode="HTML", reply_markup=markup)
+            # If the edit replaced an attachment, send the previous media too.
+            try:
+                previous_message = Message.model_validate_json((previous or {}).get("raw_json") or "{}").as_(message.bot)
+                previous_media = extract_media(previous_message)
+                current_media = extract_media(message)
+                if previous_media and (not current_media or previous_media.get("file_unique_id") != current_media.get("file_unique_id")):
+                    await send_event_media(
+                        message.bot, owner_id, previous_message,
+                        f"✏️ Предыдущее вложение до изменения · {chat_name}\nАвтор: {name}",
+                        app_markup("Посмотреть историю", view="edited", chat_id=message.chat.id, message_id=message.message_id),
+                    )
+            except Exception:
+                log.exception("Could not send previous media version owner=%s message=%s", owner_id, message.message_id)
         except Exception:
             log.exception("Could not send edit alert to owner=%s", owner_id)
 
