@@ -135,6 +135,11 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if status == "approved":
             if await db.claim_start_welcome(message.from_user.id):
                 await message.answer("Доступ одобрен. Откройте Mini App:", reply_markup=event_markup)
+            else:
+                await message.answer(
+                    "Вы уже зарегистрированы. Чтобы снова открыть архив, нажмите кнопку ниже.",
+                    reply_markup=event_markup,
+                )
             return
         elif status == "rejected":
             await message.answer("В доступе отказано. Если это ошибка, свяжитесь с главным администратором.")
