@@ -155,7 +155,6 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         return (
             "⚙️ ГЛАВНАЯ ПАНЕЛЬ АДМИНИСТРАТОРА\n\n"
             f"👥 Пользователи в базе: {s['users']}\n"
-            f"🆕 Новые за 7 дней: {s['new_users_7d']}\n"
             f"🟢 С активным Business: {s['connected']}\n"
             f"💬 Чаты в архиве: {s['chats']}\n"
             f"✉️ Сохранённые сообщения: {s['messages']}\n"
@@ -291,10 +290,10 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
         if not re.fullmatch(r"[A-Za-z0-9_]{5,32}", username):
             await message.answer("Укажите корректный @username Telegram.")
             return
-        result = await db.find_owner_by_username(username)
+        result = await db.find_registered_owner(username)
         admin_lookup_waiting.discard(message.from_user.id)
         if not result:
-            await message.answer("Пользователь не найден среди сохранённых Business-подключений. Он должен подключить бота, а Telegram должен передать его username.")
+            await message.answer("Не найден одобренный пользователь с активным Business-подключением или сохранёнными чатами.")
             return
         await message.answer(
             f"Найден @{result.get('owner_username') or username}\n"
