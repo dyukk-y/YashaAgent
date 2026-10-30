@@ -603,13 +603,12 @@ class ArchiveDB:
                        COALESCE(SUM(a.is_deleted),0) AS deleted_count, MAX(a.date_ts) AS last_date,
                        (SELECT x.text FROM message_buffer x WHERE x.owner_user_id=a.owner_user_id AND x.chat_id=a.chat_id ORDER BY x.date_ts DESC LIMIT 1) AS last_text,
                        (SELECT COUNT(*) FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id) AS edited_count,
-                       (SELECT MAX(event_ts) FROM (
-                           SELECT deleted_at AS event_ts FROM deleted_message_events d
-                            WHERE d.owner_user_id=a.owner_user_id AND d.chat_id=a.chat_id
-                           UNION ALL
-                           SELECT edited_at AS event_ts FROM archived_message_edits e
-                            WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id
-                       )) AS last_event_at
+                       NULLIF(MAX(
+                           COALESCE((SELECT MAX(d.deleted_at) FROM deleted_message_events d
+                                     WHERE d.owner_user_id=a.owner_user_id AND d.chat_id=a.chat_id), 0),
+                           COALESCE((SELECT MAX(e.edited_at) FROM archived_message_edits e
+                                     WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id), 0)
+                       ), 0) AS last_event_at
                 FROM all_chat_rows a WHERE a.owner_user_id=?
                   AND NOT EXISTS (SELECT 1 FROM hidden_chats h WHERE h.owner_user_id=a.owner_user_id AND h.chat_id=a.chat_id)
                 GROUP BY a.owner_user_id,a.chat_id ORDER BY last_date DESC
