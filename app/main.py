@@ -85,6 +85,7 @@ async def main() -> None:
                     "business_message",
                     "edited_business_message",
                     "deleted_business_messages",
+                    "callback_query",
                 ],
             ),
             web_server.serve(),
