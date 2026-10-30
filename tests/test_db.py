@@ -37,7 +37,10 @@ def test_archive_search_and_forget(tmp_path):
         assert (await db.search(42, "hello"))[0]["text"] == "hello archive"
         assert (await db.search(None, "hello"))[0]["owner_user_id"] == 42
         assert await db.search(99, "hello") == []
-        assert await db.stats(42) == (1, 0)
+        # Ordinary archived messages must not inflate edited/deleted counts.
+        assert await db.stats(42) == (0, 0)
+        await db.mark_deleted("bc-1", 900, [3], 42)
+        assert await db.stats(42) == (1, 1)
         assert await db.forget_owner(42) == 1
         assert await db.search(42, "hello") == []
     asyncio.run(run())
