@@ -320,42 +320,60 @@ def setup_handlers(db: ArchiveDB, settings: Settings) -> Router:
                 pass
             await db.update_media_record(media_id, "", "pending", "Повторное сохранение файла")
         try:
-            max_file_bytes = max(1, settings.media_max_file_mb) * 1024 * 1024
-            quota_bytes = max(1, settings.media_quota_mb) * 1024 * 1024
+            # Zero means unlimited local size/quota. The hosted Telegram Bot API
+            # has its own hard download-size ceiling independent of our settings.
+            max_file_bytes = settings.media_max_file_mb * 1024 * 1024 if settings.media_max_file_mb > 0 else 0
+            quota_bytes = settings.media_quota_mb * 1024 * 1024 if settings.media_quota_mb > 0 else 0
             known_size = media.get("file_size")
-            if known_size and known_size > max_file_bytes:
+            if max_file_bytes and known_size and known_size > max_file_bytes:
                 await db.update_media_record(media_id, "", "too_large", f"Размер больше лимита {settings.media_max_file_mb} МБ")
                 return
             usage = await db.media_usage_for_owner(owner_id)
-            if usage >= quota_bytes:
+            if quota_bytes and usage >= quota_bytes:
                 await db.update_media_record(media_id, "", "quota", f"Лимит хранилища {settings.media_quota_mb} МБ исчерпан")
-                return
-            telegram_file = await message.bot.get_file(media["file_id"])
-            if not telegram_file.file_path:
-                raise RuntimeError("Telegram did not return a file path")
-            actual_size = media.get("file_size") or getattr(telegram_file, "file_size", None)
-            if actual_size and actual_size > max_file_bytes:
-                await db.update_media_record(media_id, "", "too_large", f"Размер больше лимита {settings.media_max_file_mb} МБ")
-                return
-            if actual_size and usage + actual_size > quota_bytes:
-                await db.update_media_record(media_id, "", "quota", f"Файл превысит лимит хранилища {settings.media_quota_mb} МБ")
                 return
             target_dir = root / str(owner_id) / str(message.chat.id) / str(message.message_id)
             target_dir.mkdir(parents=True, exist_ok=True)
-            original_name = Path(media.get("file_name") or Path(telegram_file.file_path).name).name
+            original_name = Path(media.get("file_name") or f"{media['media_type']}.bin").name
             original_name = re.sub(r"[^A-Za-z0-9._ -]", "_", original_name).strip(" .") or f"{media['media_type']}.bin"
             target = target_dir / f"{media_id}_{original_name}"
-            await message.bot.download_file(telegram_file.file_path, destination=target)
-            downloaded_size = target.stat().st_size
-            if downloaded_size > max_file_bytes:
-                target.unlink(missing_ok=True)
-                await db.update_media_record(media_id, "", "too_large", f"Размер больше лимита {settings.media_max_file_mb} МБ", downloaded_size)
-                return
-            if usage + downloaded_size > quota_bytes:
-                target.unlink(missing_ok=True)
-                await db.update_media_record(media_id, "", "quota", f"Файл превысит лимит хранилища {settings.media_quota_mb} МБ", downloaded_size)
-                return
-            await db.update_media_record(media_id, str(target), "stored", "", downloaded_size)
+            temp_target = target.with_name(target.name + ".part")
+            last_error = None
+            for attempt in range(4):
+                try:
+                    telegram_file = await message.bot.get_file(media["file_id"])
+                    if not telegram_file.file_path:
+                        raise RuntimeError("Telegram did not return a file path")
+                    actual_size = media.get("file_size") or getattr(telegram_file, "file_size", None)
+                    if max_file_bytes and actual_size and actual_size > max_file_bytes:
+                        await db.update_media_record(media_id, "", "too_large", f"Размер больше лимита {settings.media_max_file_mb} МБ")
+                        return
+                    if quota_bytes and actual_size and usage + actual_size > quota_bytes:
+                        await db.update_media_record(media_id, "", "quota", f"Файл превысит лимит хранилища {settings.media_quota_mb} МБ")
+                        return
+                    temp_target.unlink(missing_ok=True)
+                    await message.bot.download_file(telegram_file.file_path, destination=temp_target)
+                    downloaded_size = temp_target.stat().st_size
+                    if downloaded_size <= 0:
+                        raise RuntimeError("Telegram returned an empty media file")
+                    if max_file_bytes and downloaded_size > max_file_bytes:
+                        temp_target.unlink(missing_ok=True)
+                        await db.update_media_record(media_id, "", "too_large", f"Размер больше лимита {settings.media_max_file_mb} МБ", downloaded_size)
+                        return
+                    if quota_bytes and usage + downloaded_size > quota_bytes:
+                        temp_target.unlink(missing_ok=True)
+                        await db.update_media_record(media_id, "", "quota", f"Файл превысит лимит хранилища {settings.media_quota_mb} МБ", downloaded_size)
+                        return
+                    temp_target.replace(target)
+                    await db.update_media_record(media_id, str(target), "stored", "", downloaded_size)
+                    log.info("Archived media owner=%s chat=%s message=%s type=%s bytes=%s", owner_id, message.chat.id, message.message_id, media["media_type"], downloaded_size)
+                    return
+                except Exception as exc:
+                    last_error = exc
+                    temp_target.unlink(missing_ok=True)
+                    if attempt < 3:
+                        await asyncio.sleep(1.5 * (attempt + 1))
+            raise RuntimeError(f"Media download failed after 4 attempts: {last_error}")
             log.info("Archived media owner=%s chat=%s message=%s type=%s", owner_id, message.chat.id, message.message_id, media["media_type"])
         except Exception as exc:
             await db.update_media_record(media_id, "", "failed", str(exc))
