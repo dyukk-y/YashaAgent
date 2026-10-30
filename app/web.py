@@ -82,6 +82,38 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
             raise HTTPException(status_code=403, detail="Доступ только для главного администратора")
         return user
 
+    @api.get('/api/admin/stats')
+    async def admin_stats(request: Request):
+        await require_admin(request)
+        return await db.admin_stats()
+
+    @api.get('/api/admin/users')
+    async def admin_users(request: Request, limit: int = 50, offset: int = 0):
+        await require_admin(request)
+        return {'users': await db.admin_users(min(max(limit, 1), 100), max(offset, 0))}
+
+    @api.get('/api/admin/requests')
+    async def admin_requests(request: Request):
+        await require_admin(request)
+        return {'requests': await db.pending_access_requests(100, 0)}
+
+    @api.post('/api/admin/requests/{owner_id}/{decision}')
+    async def admin_review_request(owner_id: int, decision: str, request: Request):
+        admin = await require_admin(request)
+        status = {'approve': 'approved', 'reject': 'rejected'}.get(decision)
+        if not status:
+            raise HTTPException(status_code=400, detail='Неизвестное решение')
+        changed = await db.review_access_request(owner_id, status, admin['id'])
+        return {'ok': changed, 'status': status if changed else await db.user_access_status(owner_id)}
+
+    @api.get('/api/admin/users/lookup')
+    async def admin_lookup_user(request: Request, username: str):
+        await require_admin(request)
+        result = await db.find_registered_owner(username)
+        if not result or result['status'] != 'approved' or not (result['connected'] or result['chat_count']):
+            raise HTTPException(status_code=404, detail='Одобренный пользователь с активным подключением или архивом не найден')
+        return {'user': result}
+
     @api.get("/api/admin/chats")
     async def admin_chats(request: Request):
         await require_admin(request)
