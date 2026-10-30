@@ -846,7 +846,7 @@ class ArchiveDB:
                        (SELECT x.text FROM message_buffer x WHERE x.owner_user_id=a.owner_user_id AND x.chat_id=a.chat_id ORDER BY x.date_ts DESC LIMIT 1) AS last_text,
                        (SELECT COUNT(*) FROM archived_message_edits e WHERE e.owner_user_id=a.owner_user_id AND e.chat_id=a.chat_id) AS edited_count,
                        EXISTS(SELECT 1 FROM hidden_chats h WHERE h.owner_user_id=a.owner_user_id AND h.chat_id=a.chat_id) AS is_hidden
-                FROM all_chat_rows a
+                FROM all_chat_rows a JOIN user_access ua ON ua.owner_user_id=a.owner_user_id AND ua.status='approved'
                 GROUP BY a.owner_user_id, a.chat_id
                 ORDER BY last_date DESC
             """)
