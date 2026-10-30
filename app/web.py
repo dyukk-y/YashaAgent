@@ -129,8 +129,6 @@ def create_web_app(db: ArchiveDB, bot, bot_token: str, admin_ids: set[int] | Non
     @api.get("/api/admin/chats/{owner_id}/{chat_id}/messages/{message_id}/edits")
     async def admin_message_edits(owner_id: int, chat_id: int, message_id: int, request: Request):
         await require_admin(request)
-        if await db.user_access_status(owner_id) != "approved":
-            raise HTTPException(status_code=404, detail="Одобренный пользователь не найден")
         if not await db.owner_has_chat(owner_id, chat_id):
             raise HTTPException(status_code=404, detail="Чат не найден в архиве")
         return {"edits": await db.edit_history(owner_id, chat_id, message_id)}
